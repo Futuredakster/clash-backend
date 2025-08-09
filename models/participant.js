@@ -38,6 +38,7 @@ module.exports = function(sequelize, DataTypes) {
   }, {
     sequelize,
     tableName: 'participant',
+     freezeTableName: true, 
     timestamps: true, // Enable automatic timestamps
     createdAt: 'created_at', // Specify the name of the createdAt field
     updatedAt: 'modified_at', // Specify the name of the updatedAt field

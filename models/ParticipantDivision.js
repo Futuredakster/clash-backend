@@ -39,6 +39,7 @@ module.exports = function(sequelize, DataTypes) {
   }, {
     sequelize,
     tableName: 'participant_division',
+     freezeTableName: true, 
     timestamps: false,
     indexes: [
       {

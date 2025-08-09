@@ -83,6 +83,7 @@ module.exports = function(sequelize, DataTypes) {
   }, {
     sequelize,
     tableName: 'brackets',
+     freezeTableName: true, 
     timestamps: false,
     indexes: [
       {
