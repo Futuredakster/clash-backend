@@ -43,6 +43,10 @@ module.exports = function(sequelize, DataTypes) {
     image_filename: {
       type: DataTypes.STRING(255), // Adjust the size based on your needs
       allowNull: true // Allow the field to be nullable if an image is optional
+    },
+    signup_duedate: {
+      type: DataTypes.DATEONLY,
+      allowNull: true
     }
   }, {
     sequelize,

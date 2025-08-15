@@ -67,6 +67,37 @@ router.get("/praticipent", async (req, res) => {
   }
 });
 
+
+router.get("/signup", async (req, res) => {
+  const { tournament_name } = req.query;
+  const today = new Date().toISOString().split("T")[0];
+  try {
+    let whereCondition = { is_published: true };
+    if (tournament_name && tournament_name.trim() !== "") {
+      whereCondition.tournament_name = {
+        [Op.like]: `%${tournament_name}%`,
+      };
+      
+    }
+
+    const listOfPosts = await tournaments.findAll({
+      where: whereCondition,
+      order: [["start_date", "ASC"]],
+    });
+    const results = listOfPosts.filter(tournament => tournament.signup_duedate >= today);
+
+    const tournamentsWithImageUrl = results.map((tournament) => ({
+      ...tournament.dataValues,
+      imageUrl: tournament.image_filename || null,
+    }));
+
+    res.json(tournamentsWithImageUrl);
+  } catch (error) {
+    console.error("Error fetching tournaments:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
 router.get('/OneParticipant', validateParticipant, async (req, res) => {
   const participant_id = req.participant.participant_id;
 
@@ -155,7 +186,7 @@ router.get("/byaccount", validateToken, async (req, res) => {
 
 router.post("/", validateToken, upload.single("image"), async (req, res) => {
   try {
-    const { tournament_name, start_date, end_date, is_published } = req.body;
+    const { tournament_name, start_date, end_date, is_published,signup_duedate } = req.body;
     const account_id = req.user.account_id;
     console.log("POST / route hit - before multer");
     // Check if an image was uploaded
@@ -180,6 +211,7 @@ router.post("/", validateToken, upload.single("image"), async (req, res) => {
       is_published,
       account_id,
       image_filename: imageUrl,  // Store Cloudinary URL here
+      signup_duedate,
     });
 
     res.json(tournament);
@@ -212,6 +244,9 @@ router.patch("/", validateToken, upload.single("image"), async (req, res) => {
       Tournament.end_date = isNotNullOrEmpty(data.end_date)
         ? data.end_date
         : Tournament.end_date;
+       Tournament.signup_duedate = isNotNullOrEmpty(data.signup_duedate)
+        ? data.signup_duedate
+        : Tournament.signup_duedate;
 
       if (req.file) {
         Tournament.image_filename = req.file.path; // Cloudinary URL will be stored here
