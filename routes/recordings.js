@@ -107,6 +107,44 @@ router.get("/", async (req, res) => {
   }
 });
 
+// GET /recordings/division - Get all recordings for a division
+router.get("/division", async (req, res) => {
+  try {
+    const { division_id } = req.query;
+    
+    if (!division_id) {
+      return res.status(400).json({ error: "division_id is required" });
+    }
+
+    // Get recordings with bracket and division info
+    const recordingsList = await recordings.findAll({
+      include: [{
+        model: brackets,
+        required: true,
+        where: { division_id },
+        attributes: ['bracket_id', 'division_id', 'user1', 'user2', 'round', 'is_complete']
+      }],
+      where: { recording_status: 'uploaded' }, // Only show successfully uploaded recordings
+      order: [["createdAt", "DESC"]],
+      attributes: [
+        'recording_id', 
+        'cloudinary_url', 
+        'original_filename', 
+        'file_size', 
+        'duration', 
+        'started_at', 
+        'completed_at',
+        'createdAt'
+      ]
+    });
+
+    res.json(recordingsList);
+  } catch (error) {
+    console.error("Error fetching division recordings:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
 // GET /recordings/byaccount - Get recordings by user account
 router.get("/byaccount", validateToken, async (req, res) => {
   try {
