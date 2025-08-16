@@ -177,7 +177,7 @@ router.post("/", async (req, res) => {
     const { division_id } = req.query;
   
     // Log for debugging to see what division_id is being passed
-   
+    console.log("Fetching brackets for division_id:", division_id);
   
     // Check if division_id is provided
     if (!division_id) {
@@ -192,6 +192,10 @@ router.post("/", async (req, res) => {
         }
       });
   
+      // Log the results for debugging
+      console.log(`Found ${bracket.length} brackets for division ${division_id}`);
+      console.log("Bracket IDs:", bracket.map(b => b.bracket_id));
+      
       // If no brackets found, return 404
       if (bracket.length === 0) {
         return res.json([]); // Return an empty array

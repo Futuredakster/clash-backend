@@ -35,6 +35,8 @@ const bracketRouter = require("./routes/brackets");
 app.use("/brackets",bracketRouter);
 
 app.use('/api/stream/tokens', tokenRoutes);
+const recordingsRouter = require("./routes/recordings");
+app.use("/recordings", recordingsRouter);
 
 setupSocket(io);
 

@@ -39,4 +39,28 @@ router.get('/', async (req,res) => {
         res.json(viewerToken.token)
 })
 
+// New endpoint to get bracket_id from token
+router.get('/bracket-id', async (req, res) => {
+    const { token } = req.query;
+    if (!token) return res.status(400).json({ error: 'token required' });
+    
+    try {
+        const streamToken = await StreamToken.findOne({
+            where: { token, isActive: true }
+        });
+        
+        if (!streamToken) {
+            return res.status(404).json({ error: 'Token not found or inactive' });
+        }
+        
+        res.json({ 
+            bracket_id: streamToken.bracket_id,
+            role: streamToken.role 
+        });
+    } catch (error) {
+        console.error('Error fetching bracket_id from token:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 module.exports = router;

@@ -103,15 +103,20 @@ module.exports = function(sequelize, DataTypes) {
       },
     ]
   });
-
+ 
+  // In brackets.js associate function
+brackets.associate = function (models) {
+  brackets.hasMany(models.StreamToken, {
+    foreignKey: 'bracket_id',
+    onDelete: 'CASCADE',
+  });
   
-  brackets.associate = function (models) {
-    brackets.hasMany(models.StreamToken, {
-      foreignKey: 'bracket_id',
-      onDelete: 'CASCADE',
-    });
-  };
-
+  // Add this new association
+  brackets.hasMany(models.recordings, {
+    foreignKey: 'bracket_id',
+    onDelete: 'CASCADE',
+  });
+};
   return brackets;
 };
   

@@ -18,10 +18,15 @@ const storage = new CloudinaryStorage({
   },
 });
 
-console.log("Cloudinary configured with:", {
-  cloud_name: process.env.cloudinary_cloud_name,
-  api_key: process.env.cloudinary_api_key ? '***' : undefined,
-  api_secret: process.env.cloudinary_api_secret ? '***' : undefined,
+const videoStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'recordings',
+    allowed_formats: ['mp4', 'webm', 'avi', 'mov'],
+    resource_type: 'video',
+  },
 });
 
-module.exports = { cloudinary, storage };
+
+
+module.exports = { cloudinary, storage, videoStorage };
