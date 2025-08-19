@@ -47,6 +47,11 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false,
       defaultValue: false
     },
+     cost: {
+      type: DataTypes.INTEGER, // stored in cents
+      allowNull: false,
+      defaultValue: 0
+    },
     created_at: {
       type: DataTypes.DATE,
       allowNull: false,

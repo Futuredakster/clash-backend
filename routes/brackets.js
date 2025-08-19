@@ -224,22 +224,10 @@ router.post("/", async (req, res) => {
 
 
   router.get("/participent",validateParticipant, async (req, res) => {
-    const participant_id = req.participant.participant_id;
-  
-    // Log for debugging to see what division_id is being passed
-   
-  
-    // Check if division_id is provided
-    const participantDivision = await ParticipantDivision.findOne({
-      where: { participant_id },
-    });
-
-    if (!participantDivision) {
-      return res.status(404).json({ error: "Participant not found in any division" });
+const { division_id } = req.query; // get division_id from query params
+    if (!division_id) {
+      return res.status(400).json({ error: "division_id is required" });
     }
-
-    const division_id = participantDivision.division_id;
-
   
     try {
       // Query the database for brackets with the given division_id

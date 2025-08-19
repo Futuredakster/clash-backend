@@ -158,28 +158,23 @@ router.get('/', async (req, res) => {
 
 router.get('/All', validateParticipant, async (req, res) => {
   try {
-    const participant_id = req.participant.participant_id;
+    const { division_id } = req.query; // get division_id from query params
+    if (!division_id) {
+      return res.status(400).json({ error: "division_id is required" });
+    }
 
-    const participantDivision = await ParticipantDivision.findOne({
-         where: { participant_id },
-       }); 
- 
-       const division_id = participantDivision.division_id;
-    const participantIds = await ParticipantDivision.findAll({
-      where: {
-        division_id
-      },
+    // Get all participant_ids in this division
+    const participantDivisions = await ParticipantDivision.findAll({
+      where: { division_id },
       attributes: ['participant_id']
-      // only return whats in the attribute
     });
 
-    const ids = participantIds.map(pd => pd.participant_id);
-  // Filters it so you only get the values of the ids
+    const participantIds = participantDivisions.map(pd => pd.participant_id);
+
+    // Fetch participant names
     const participants = await participant.findAll({
-      where: {
-        participant_id: ids
-      },
-      attributes: ['name']
+      where: { participant_id: participantIds },
+      attributes: ['name', 'participant_id', 'email'] // optional: include email for reference
     });
 
     res.json(participants);
@@ -188,6 +183,7 @@ router.get('/All', validateParticipant, async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
 
 router.get('/user', validateToken, async (req, res) => {
   const { division_id } = req.query;

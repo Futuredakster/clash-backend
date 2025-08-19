@@ -5,6 +5,7 @@ const {participant} = require("../models");
 const {ParticipantDivision} = require("../models");
 const { validateToken } = require("../middlewares/AuthMiddleware");
 const { validateParticipant } = require('../middlewares/validateParticipant')
+const { Op } = require("sequelize");
 const { Sequelize } = require('sequelize');
 
 
@@ -58,12 +59,19 @@ router.post('/', validateToken, async (req, res) => {
   });
 router.get('/partview', validateParticipant, async (req, res) => {
   const participant_id = req.participant.participant_id;
+   const participent = await participant.findOne({ where: { participant_id } });
   let time = 0;
   // make time a array to store time for each division
+  const email = participent.email;
+
+    // Get all participant_ids with this email
+    const participants = await participant.findAll({ where: { email } });
+    const participantIds = participants.map(p => p.participant_id);
+
   try {
-    const participantDivisions = await ParticipantDivision.findAll({
-      where: { participant_id },
-    });
+     const participantDivisions = await ParticipantDivision.findAll({
+          where: { participant_id: { [Op.in]: participantIds } },
+        });
 
     if (!participantDivisions || participantDivisions.length === 0) {
       return res.status(404).json({ error: "Participant not found in any division" });
@@ -71,9 +79,10 @@ router.get('/partview', validateParticipant, async (req, res) => {
 
     const divisionIds = participantDivisions.map(pd => pd.division_id);
 
-    const divisions = await Divisions.findAll({
-      where: { division_id: divisionIds },
-    });
+
+      const divisions = await Divisions.findAll({
+          where: { division_id: { [Op.in]: divisionIds } },
+        });
     
     const allDivisions = await Divisions.findAll({
       where : {tournament_id: divisions[0].tournament_id},

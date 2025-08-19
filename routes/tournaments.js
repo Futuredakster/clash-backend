@@ -1,7 +1,7 @@
 const express = require("express");
 const multer = require("multer");
 const router = express.Router();
-const { tournaments ,Divisions,ParticipantDivision  } = require("../models");
+const { tournaments ,Divisions,ParticipantDivision,participant  } = require("../models");
 const { validateToken } = require("../middlewares/AuthMiddleware");
 const { Op } = require("sequelize");
 const { cloudinary, storage } = require("../utils/cloudinary");
@@ -98,45 +98,61 @@ router.get("/signup", async (req, res) => {
   }
 });
 
-router.get('/OneParticipant', validateParticipant, async (req, res) => {
-  const participant_id = req.participant.participant_id;
 
+
+router.get('/OneParticipant', validateParticipant, async (req, res) => {
   try {
-    // Step 1: Find the ParticipantDivision that matches the participant_id
-    const participantDivision = await ParticipantDivision.findOne({
-      where: { participant_id },
+    const participant_id = req.participant.participant_id;
+    const participent = await participant.findOne({ where: { participant_id } });
+
+    if (!participent) {
+      return res.status(404).json({ error: "Participant not found" });
+    }
+
+    const email = participent.email;
+
+    // Get all participant_ids with this email
+    const participants = await participant.findAll({ where: { email } });
+    const participantIds = participants.map(p => p.participant_id);
+
+    // Get all divisions for those participantIds
+    const participantDivisions = await ParticipantDivision.findAll({
+      where: { participant_id: { [Op.in]: participantIds } },
     });
 
-    if (!participantDivision) {
+    if (participantDivisions.length === 0) {
       return res.status(404).json({ error: "Participant not found in any division" });
     }
 
-    const division_id = participantDivision.division_id;
+    const divisionIds = participantDivisions.map(pd => pd.division_id);
 
-    // Step 2: Get the division
-    const division = await Divisions.findOne({
-      where: { division_id },
+    // Get all divisions
+    const divisions = await Divisions.findAll({
+      where: { division_id: { [Op.in]: divisionIds } },
     });
 
-    if (!division) {
+    if (divisions.length === 0) {
       return res.status(404).json({ error: "Division not found" });
     }
 
-    // Step 3: Get the tournament using the tournament_id from the division
-    const tournament = await tournaments.findOne({
-      where: { tournament_id: division.tournament_id },
+    // Get all tournaments
+    const tournamentIds = divisions.map(d => d.tournament_id);
+    const tournamentsList = await tournaments.findAll({
+      where: { tournament_id: { [Op.in]: tournamentIds } },
     });
 
-    if (!tournament) {
+    if (tournamentsList.length === 0) {
       return res.status(404).json({ error: "Tournament not found" });
     }
 
-    res.json(tournament);
+    res.json(tournamentsList);
+
   } catch (err) {
     console.error("Error fetching participant and division:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
 
 router.get("/default", async (req, res) => {
   try {
