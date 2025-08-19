@@ -26,6 +26,15 @@ module.exports = function(sequelize, DataTypes) {
         model: 'accounts',
         key: 'account_id'
       }
+    },
+    role: {
+      type: DataTypes.STRING(50),
+      allowNull: false,
+      defaultValue: 'partner'
+    },
+    stripe_account: {  
+      type: DataTypes.STRING(255),
+      allowNull: true
     }
   }, {
     sequelize,

@@ -5,9 +5,12 @@ const bcrypt = require("bcrypt");
 const {validateToken} = require('../middlewares/AuthMiddleware')
 const {validate} = require('../middlewares/AuthMiddleware')
 const { Resend } = require('resend');
+const Stripe = require("stripe");
 require('dotenv').config();
 
 const resend = new Resend(process.env.SENDGRID_API_KEY);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
 
 
 const {sign} = require('jsonwebtoken');
@@ -50,9 +53,9 @@ router.post("/Login", async (req, res) => {
     if (!match) {
       return res.json({ error: "Wrong Username And Password Combination" });
     }
-    const accessToken= sign({username : user.username, user_id:user.user_id, account_id:user.account_id }, "importantsecret");
+    const accessToken= sign({username : user.username, user_id:user.user_id, account_id:user.account_id, role:user.role }, "importantsecret");
     // if the username matches you search for the password and if that matches you are logged in now. This is collected from the login webpage.
-    res.json({token: accessToken, username:username, id:user.user_id, account_id:user.account_id});
+    res.json({token: accessToken, username:username, id:user.user_id, account_id:user.account_id, role:user.role});
   });
 });
 
@@ -141,7 +144,7 @@ router.post("/verifyemail", async (req, res) => {
       "importanttoken",
       { expiresIn: '5m' } // Token expires in 5 minutes
     );
-    const url = `http://localhost:3000/ForgotPass?token=${verifyToken}`;
+    const url = `https://clash-t.netlify.app/ForgotPass?token=${verifyToken}`;
    const msg= resend.emails.send({
       from: 'onboarding@resend.dev', // Change to your verified sender
       to: email, // Change to your recipient
@@ -179,6 +182,54 @@ router.patch("/newpassword", validate, async (req, res) => {
   }
   else{
     res.json({error:"user not found"});
+  }
+})
+
+
+router.get("/connect", validateToken,async (req, res) => {
+  const data = req.user;
+  try {
+    const account = await stripe.accounts.create({
+      type: "express", // or "standard" depending on what flow you want
+    });
+
+    const user = await users.findOne({
+    where: {
+      user_id:data.user_id
+    }
+  })
+  if(user){
+    await users.update(
+      { stripe_account: account.id },
+      { where: { user_id: data.user_id } }
+    );
+  }
+        
+    const accountLink = await stripe.accountLinks.create({
+      account: account.id,
+      refresh_url: "https://clash-t.netlify.app/home", // where to go if they restart
+      return_url: "https://clash-t.netlify.app/home", // where to go after finishing
+      type: "account_onboarding",
+    });
+
+    res.json({ url: accountLink.url });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+router.get("/status",validateToken, async (req,res) => {
+  const data = req.user;
+  const user = await users.findOne({
+    where: {
+      user_id:data.user_id
+    }
+  })
+  if(user.stripe_account){
+    res.json({message:true})
+  }else{
+    res.json({message:false})
   }
 })
 

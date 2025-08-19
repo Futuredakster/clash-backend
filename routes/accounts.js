@@ -35,7 +35,8 @@ router.post("/user", async (req, res) => {
       username: userObj.username,
       password_hash: hash,
       email: userObj.email,
-      account_id: userObj.account_id
+      account_id: userObj.account_id,
+      role:"Host"
     });
   });
   //var b = await users.create(userObj);

@@ -72,3 +72,11 @@ module.exports = function(sequelize, DataTypes) {
   });
   return tournaments;
 };
+
+
+// Create a new column role for users. When creating an account the user will be a host by default.
+// This will then allow the host premission to make a stripe account.
+// After if they signe dup we will have a green button saying they did so they have an account id
+// Or else we will have a button saying they need to sign up.
+// There are two diffrent api routes so we will just make one a parthenr and one a host
+// default value is null 
