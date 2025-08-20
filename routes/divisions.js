@@ -59,6 +59,7 @@ router.post('/', validateToken, async (req, res) => {
   });
 router.get('/partview', validateParticipant, async (req, res) => {
   const participant_id = req.participant.participant_id;
+  const { tournamentId } = req.query;
    const participent = await participant.findOne({ where: { participant_id } });
   let time = 0;
   // make time a array to store time for each division
@@ -81,7 +82,7 @@ router.get('/partview', validateParticipant, async (req, res) => {
 
 
       const divisions = await Divisions.findAll({
-          where: { division_id: { [Op.in]: divisionIds } },
+          where: { division_id: { [Op.in]: divisionIds }, tournament_id: tournamentId },
         });
     
     const allDivisions = await Divisions.findAll({
