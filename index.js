@@ -38,6 +38,9 @@ app.use('/api/stream/tokens', tokenRoutes);
 const recordingsRouter = require("./routes/recordings");
 app.use("/recordings", recordingsRouter);
 
+const cartRouter = require("./routes/cart");
+app.use("/cart", cartRouter);
+
 setupSocket(io);
 
 

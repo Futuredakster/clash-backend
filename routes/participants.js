@@ -80,6 +80,14 @@ router.post('/auth', async (req,res) => {
 router.post('/code', async (req, res) => {
   const { code, participant_id } = req.body;
 
+  const participent = await participant.findOne({
+    where: {
+      participant_id
+    }
+  });
+
+  const name = participent.name;
+
   console.log("Received participant_id:", participant_id);  // Log the received participant_id
 
   try {
@@ -113,11 +121,11 @@ router.post('/code', async (req, res) => {
     await verify.update({ verified: true });
 
     // Create a JWT token and send it back
-    const token = jwt.sign({ participant_id }, "importantsecrets", {
+    const token = jwt.sign({ participant_id, name }, "importantsecrets", {
       expiresIn: '30m',
     });
  
-    res.json({ token, id: participant_id });
+    res.json({ token, id: participant_id, name:name});
 
   } catch (err) {
     console.error('Error during verification:', err);
@@ -125,9 +133,7 @@ router.post('/code', async (req, res) => {
   }
 });
 
-
-
-
+// modifications: added name field to the token being created
 
 router.get('/', async (req, res) => {
   const { division_id } = req.query;
@@ -209,7 +215,36 @@ router.get('/user', validateToken, async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-//
+
+
+
+// try outs 
+router.post('/login', async (req, res) => {
+  try {
+    const { name, date_of_birth, belt_color, age_group, proficiency_level, email } = req.body;
+
+    if (!name || !date_of_birth || !belt_color || !age_group || !proficiency_level || !email) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    const newParticipant = await participant.create({
+      name,
+      date_of_birth,
+      belt_color,
+      email
+    });
+     const token = jwt.sign({ participant_id: newParticipant.participant_id, name }, "importantsecrets", {
+      expiresIn: '30m',
+    });
+   res.json({ token, id: newParticipant.participant_id, name });
+  } catch (error) {
+    console.error('Error creating participant:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/auths', validateParticipant, (req,res) => {
+res.json(req.participant);
+});
   
 // Email function -----------------------------------------------------------------------------------------------------------------------------------
 const emailer = (email, message) => {
