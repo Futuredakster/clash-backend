@@ -26,6 +26,15 @@ module.exports = function(sequelize, DataTypes) {
       },
       onDelete: 'CASCADE'
     },
+    tournament_id: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      references: {
+        model: 'tournaments', // Must match your Tournaments model name
+        key: 'tournament_id'
+      },
+      onDelete: 'CASCADE'
+    },
     stripeSessionId: {
       type: DataTypes.STRING,
       allowNull: true,
@@ -61,23 +70,22 @@ module.exports = function(sequelize, DataTypes) {
         name: "PRIMARY",
         unique: true,
         using: "BTREE",
-        fields: [
-          { name: "cart_id" },
-        ]
+        fields: [{ name: "cart_id" }]
       },
       {
         name: "participant_id_index",
         using: "BTREE",
-        fields: [
-          { name: "participant_id" },
-        ]
+        fields: [{ name: "participant_id" }]
       },
       {
         name: "division_id_index",
         using: "BTREE",
-        fields: [
-          { name: "division_id" },
-        ]
+        fields: [{ name: "division_id" }]
+      },
+      {
+        name: "tournament_id_index",
+        using: "BTREE",
+        fields: [{ name: "tournament_id" }]
       }
     ]
   });
@@ -85,6 +93,7 @@ module.exports = function(sequelize, DataTypes) {
   cart.associate = function(models) {
     cart.belongsTo(models.participant, { foreignKey: 'participant_id' });
     cart.belongsTo(models.Divisions, { foreignKey: 'division_id' });
+    cart.belongsTo(models.tournaments, { foreignKey: 'tournament_id' });
   };
 
   // Hooks for timestamps

@@ -11,130 +11,174 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 
 router.post('/', validateParticipant, async (req, res) => {
-     const { division_id, age_group, proficiency_level} = req.body;
-   const participant_id = req.participant.participant_id;
-//
-     
-     const participantData = await participant.findOne({ where: { participant_id: participant_id } });
-     const email = participantData.email;
-     const belt_color = participantData.belt_color;
-     const date_of_birth = participantData.date_of_birth;
+    const { division_id, tournament_id, age_group, proficiency_level } = req.body;
+    const participant_id = req.participant.participant_id;
 
-     const divisionData = await Divisions.findOne({ where: { division_id: division_id } });
-     const cost = divisionData.cost;
-
-   if (!date_of_birth || !belt_color || !division_id || !age_group) {
-  console.log("❌ Missing required fields", { date_of_birth, belt_color, division_id, age_group });
-  return res.status(400).json({ error: 'Missing required fields' });
-}
-if (!isAge(age_group, date_of_birth)) {
-  console.log("❌ Age validation failed", { age_group, date_of_birth });
-  return res.json({ error: 'Wrong age' });
-}
-if (!canCompete(proficiency_level, belt_color)) {
-  console.log("❌ Belt validation failed", { proficiency_level, belt_color });
-  return res.json({ error: "Wrong division level" });
-}
-const emailExists = await isEmailAlreadyInDivision(email, division_id);
-if (emailExists) {
-  console.log("❌ Email already registered", { email, division_id });
-  return res.json({ error: "This email is already registered" });
-}
-
-
-    const cartItem = await cart.create({
-      participant_id: participant_id,
-      division_id: division_id,
+    // Validate division belongs to tournament
+    const divisionData = await Divisions.findOne({ 
+        where: { 
+            division_id: division_id,
+            tournament_id: tournament_id 
+        } 
     });
 
-   
+    if (!divisionData) {
+        return res.status(404).json({ error: 'Division not found in this tournament' });
+    }
+
+    const participantData = await participant.findOne({ where: { participant_id: participant_id } });
+    const email = participantData.email;
+    const belt_color = participantData.belt_color;
+    const date_of_birth = participantData.date_of_birth;
+
+    // Your existing validations...
+    if (!date_of_birth || !belt_color || !division_id || !age_group) {
+        console.log("❌ Missing required fields", { date_of_birth, belt_color, division_id, age_group });
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    if (!isAge(age_group, date_of_birth)) {
+        console.log("❌ Age validation failed", { age_group, date_of_birth });
+        return res.json({ error: 'Wrong age' });
+    }
+
+    if (!canCompete(proficiency_level, belt_color)) {
+        console.log("❌ Belt validation failed", { proficiency_level, belt_color });
+        return res.json({ error: "Wrong division level" });
+    }
+
+    const emailExists = await isEmailAlreadyInDivision(email, division_id);
+    if (emailExists) {
+        console.log("❌ Email already registered", { email, division_id });
+        return res.json({ error: "This email is already registered" });
+    }
+
+    // FIXED: Store tournament_id in cart
+    const cartItem = await cart.create({
+        participant_id: participant_id,
+        division_id: division_id,
+        tournament_id: tournament_id  // CRUCIAL: Store which tournament this is for
+    });
 
     res.status(201).json({ message: 'Participant added to cart', cartItem });
 })
 
 
 router.get('/', validateParticipant, async (req, res) => {
-       const participant_id = req.participant.participant_id;
-       const cartItems = await cart.findAll({ where: { participant_id,is_active:true } });
-       const divisions = await Divisions.findAll({ where: { division_id: cartItems.map(item => item.division_id) } });
-       res.json({ divisions });
-})
+  const { tournament_id } = req.query;
+      console.log("Fetching cart items for tournament:", tournament_id);
+    const participant_id = req.participant.participant_id;
+    
+    // Only get cart items for THIS tournament
+    const cartItems = await cart.findAll({ 
+        where: { 
+            participant_id,
+            tournament_id: tournament_id,  // CRUCIAL: Filter by tournament
+            is_active: true 
+        } 
+    });
+    
+    const divisions = await Divisions.findAll({ 
+        where: { 
+            division_id: cartItems.map(item => item.division_id),
+            tournament_id: tournament_id  // Double-check divisions are from this tournament
+        } 
+    });
+    
+    res.json({ divisions, tournament_id });
+});
 
 
 
 
 router.post("/create-checkout-session", validateParticipant,async (req, res) => {
   try {
-    const { cartItems } = req.body;
-    const participant_id = req.participant.participant_id;
-    if (!cartItems || cartItems.length === 0) {
-      return res.status(400).json({ error: "Cart is empty" });
-    }
+    const { tournament_id } = req.body;
+     const participant_id = req.participant.participant_id;
 
-    // assume all items belong to the same tournament
-    const tournament_id = cartItems[0].tournament_id;
+        // Get cart items for THIS tournament only
+        const cartItems = await cart.findAll({
+            where: {
+                participant_id: participant_id,
+                tournament_id: tournament_id,  // CRUCIAL: Only this tournament
+                is_active: true,
+                status: { [Op.or]: [null, 'pending'] } // Not already paid
+            },
+            include: [{
+                model: Divisions,
+                where: { tournament_id: tournament_id } // Double-check
+            }]
+        });
 
-    // find the tournament
-    const tournament = await tournaments.findOne({ where: { tournament_id } });
-    if (!tournament) {
-      return res.status(404).json({ error: "Tournament not found" });
-    }
-
-    // find the organizer (user) who owns this tournament
-    const organizer = await users.findOne({
-      where: {
-        account_id: tournament.account_id,
-        stripe_account: { [Op.ne]: null },
-      },
-    });
-    if (!organizer) {
-      return res.status(404).json({ error: "Organizer Stripe account not found" });
-    }
-
-    const organizerStripeId = organizer.stripe_account;
-
-    // build Stripe Checkout Session
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
-      mode: "payment",
-      line_items: cartItems.map((item) => ({
-        price_data: {
-          currency: "usd",
-          product_data: {
-            name: buildDivisionName(item), // e.g. "Advanced Male Kata 20-21"
-          },
-          unit_amount: item.cost, // in cents
-        },
-        quantity: 1,
-      })),
-      payment_intent_data: {
-        application_fee_amount: 500, // optional platform fee
-        transfer_data: {
-          destination: organizerStripeId,
-        },
-      },
-      success_url: "https://clash-t.netlify.app/CompetitorView",
-      cancel_url: "https://clash-t.netlify.app/DisplayCart",
-    });
-
-    // 🔑 Save session.id to each cart item so webhook can later mark them paid
-    for (const item of cartItems) {
-      await cart.update(
-        { stripeSessionId: session.id, status: "pending" },
-        {
-          where: {
-            participant_id: participant_id,
-            division_id: item.division_id,
-          },
+        if (!cartItems || cartItems.length === 0) {
+            return res.status(400).json({ error: "No items in cart for this tournament" });
         }
-      );
-    }
 
-    res.json({ url: session.url });
-  } catch (err) {
-    console.error("Error creating checkout session:", err);
-    res.status(500).json({ error: err.message });
-  }
+        // Find the tournament
+        const tournament = await tournaments.findOne({ where: { tournament_id } });
+        if (!tournament) {
+            return res.status(404).json({ error: "Tournament not found" });
+        }
+
+        // Find the organizer
+        const organizer = await users.findOne({
+            where: {
+                account_id: tournament.account_id,
+                stripe_account: { [Op.ne]: null },
+            },
+        });
+        
+        if (!organizer) {
+            return res.status(404).json({ error: "Organizer Stripe account not found" });
+        }
+
+        const organizerStripeId = organizer.stripe_account;
+
+        // Build line items from cart
+        const lineItems = cartItems.map((cartItem) => ({
+            price_data: {
+                currency: "usd",
+                product_data: {
+                    name: buildDivisionName(cartItem.Division),
+                },
+                unit_amount: cartItem.Division.cost, // in cents
+            },
+            quantity: 1,
+        }));
+
+        // Create Stripe session
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ["card"],
+            mode: "payment",
+            line_items: lineItems,
+            payment_intent_data: {
+                application_fee_amount: 500, // platform fee
+                transfer_data: {
+                    destination: organizerStripeId,
+                },
+            },
+            success_url: `https://clash-t.netlify.app/CompetitorView`,
+            cancel_url: `https://clash-t.netlify.app/DisplayCart`,
+        });
+
+        // Update cart items with session ID
+        await cart.update(
+            { stripeSessionId: session.id, status: "pending" },
+            {
+                where: {
+                    participant_id: participant_id,
+                    tournament_id: tournament_id,
+                    is_active: true
+                },
+            }
+        );
+
+        res.json({ url: session.url });
+        
+    } catch (err) {
+        console.error("Error creating checkout session:", err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 router.post(
