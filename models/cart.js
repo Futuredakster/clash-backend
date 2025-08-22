@@ -26,6 +26,16 @@ module.exports = function(sequelize, DataTypes) {
       },
       onDelete: 'CASCADE'
     },
+    stripeSessionId: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      defaultValue: null
+    },
+    status: {
+      type: DataTypes.ENUM('pending', 'paid', 'canceled'),
+      allowNull: false,
+      defaultValue: 'pending'
+    },
     is_active: {
       type: DataTypes.BOOLEAN,
       allowNull: false,

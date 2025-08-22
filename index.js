@@ -8,7 +8,10 @@ const { setupSocket } = require('./socket/socketHandler');
 
 
 app.use(cors());
-app.use(express.json());
+app.use((req, res, next) => {
+  if (req.originalUrl === "/cart/webhook") return next();
+  express.json()(req, res, next);
+});
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const db = require("./models");
@@ -37,6 +40,8 @@ app.use("/brackets",bracketRouter);
 app.use('/api/stream/tokens', tokenRoutes);
 const recordingsRouter = require("./routes/recordings");
 app.use("/recordings", recordingsRouter);
+
+
 
 const cartRouter = require("./routes/cart");
 app.use("/cart", cartRouter);
