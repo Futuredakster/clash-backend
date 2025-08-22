@@ -1,7 +1,13 @@
 const express = require("express");
-const { participant, ParticipantDivision, EmailVerification,cart, Divisions } = require("../models");
+const { participant, ParticipantDivision, EmailVerification,cart, Divisions,tournaments,users } = require("../models");
 const router = express.Router();
 const { validateParticipant } = require('../middlewares/validateParticipant')
+const Stripe = require("stripe");
+const { Op } = require("sequelize");
+require('dotenv').config();
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+
 
 router.post('/', validateParticipant, async (req, res) => {
      const { division_id, age_group, proficiency_level} = req.body;
@@ -59,7 +65,71 @@ router.get('/', validateParticipant, async (req, res) => {
 })
 
 
+
+
+// 1. Create a Checkout Session
+router.post("/create-checkout-session", async (req, res) => {
+  try {
+    const { cartItems } = req.body;
+
+    // assume all items belong to same tournament
+    const tournament_id = cartItems[1].tournament_id;
+
+    // find the tournament
+    const tournament = await tournaments.findOne({ where: { tournament_id } });
+    if (!tournament) return res.status(404).json({ error: "Tournament not found" });
+
+    // find the organizer (user) who owns this tournament
+    const organizer = await users.findOne({
+      where: {
+        account_id: tournament.account_id,
+        stripe_account: { [Op.ne]: null },
+      },
+    });
+    if (!organizer) return res.status(404).json({ error: "Organizer Stripe account not found" });
+
+    const organizerStripeId = organizer.stripe_account;
+
+    // build Stripe Checkout Session
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      mode: "payment",
+      line_items: cartItems.map((item) => ({
+        price_data: {
+          currency: "usd",
+          product_data: {
+            name: buildDivisionName(item), // e.g. division name
+          },
+          unit_amount: item.cost, // in cents
+        },
+        quantity: 1,
+      })),
+      payment_intent_data: {
+        application_fee_amount: 500, // optional platform fee
+        transfer_data: {
+          destination: organizerStripeId,
+        },
+      },
+      success_url: "https://clash-t.netlify.app/CompetitorView",
+      cancel_url: "https://clash-t.netlify.app/DisplayCart",
+    });
+
+    res.json({ url: session.url });
+
+  } catch (err) {
+    console.error("Error creating checkout session:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 // helper functions 
+function buildDivisionName(item) {
+  // you can tweak capitalization logic to match your frontend
+  const cap = (str) => str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+  return `${cap(item.proficiency_level)} ${cap(item.gender)} ${cap(item.category)} ${cap(item.age_group)}`;
+}
+
 
 function canCompete(level, userBelt) {
   const beginnerBelts = ["white", "yellow"];
