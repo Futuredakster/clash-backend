@@ -221,9 +221,9 @@ router.get('/user', validateToken, async (req, res) => {
 // try outs 
 router.post('/login', async (req, res) => {
   try {
-    const { name, date_of_birth, belt_color, age_group, proficiency_level, email } = req.body;
+    const { name, date_of_birth, belt_color, email } = req.body;
 
-    if (!name || !date_of_birth || !belt_color || !age_group || !proficiency_level || !email) {
+    if (!name || !date_of_birth || !belt_color || !email) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
     const newParticipant = await participant.create({
