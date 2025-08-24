@@ -270,4 +270,181 @@ router.get('/partview', validateParticipant, async (req, res) => {
        // we got the highest age active division
   }
 
+
+
+  router.get('/tournament-order',async (req, res) => {
+  const { tournament_id } = req.query;
+
+  try {
+    if (!tournament_id) {
+      return res.status(400).json({ error: "Tournament ID is required" });
+    }
+
+    // Get all divisions for the tournament
+    const allDivisions = await Divisions.findAll({
+      where: { tournament_id: tournament_id },
+      order: [['division_id', 'ASC']] // Consistent ordering
+    });
+
+    if (!allDivisions || allDivisions.length === 0) {
+      return res.status(404).json({ error: "No divisions found for this tournament" });
+    }
+
+    // Sort divisions by age range (for proper ordering logic)
+    allDivisions.sort((a, b) => {
+      const [minA, maxA] = ageRange(a);
+      const [minB, maxB] = ageRange(b);
+      return minA !== minB ? minA - minB : maxA - maxB;
+    });
+
+    // Check if there are any active divisions under 35
+    const hasUnder35Divisions = allDivisions.some(division => {
+      if (!division.is_active) return false;
+      const range = ageRange(division);
+      return range[1] < 35; // max age is under 35
+    });
+
+    // Determine starting point based on whether under 35 divisions exist
+    let startingDivision;
+    if (hasUnder35Divisions) {
+      // Start from lowest age division (kids/teens first)
+      startingDivision = lowerAgeDivision(allDivisions);
+    } else {
+      // Start from highest age division (adults 35+ only)
+      startingDivision = higherAgeDivision(allDivisions);
+    }
+
+    if (!startingDivision.division_id) {
+      return res.status(404).json({ error: "No active divisions found" });
+    }
+
+    const orderedDivisions = [];
+    const processedIds = new Set();
+
+    // Find the starting division index
+    const startIndex = allDivisions.findIndex(
+      div => div.division_id === startingDivision.division_id
+    );
+
+    if (startIndex === -1) {
+      return res.status(500).json({ error: "Could not find starting division" });
+    }
+
+    // Process divisions in age order (always ascending)
+    let currentIndex = startIndex;
+    let hasWrapped = false;
+
+    while (orderedDivisions.length < allDivisions.length) {
+      const currentDivision = allDivisions[currentIndex];
+      
+      if (currentDivision && !processedIds.has(currentDivision.division_id)) {
+        orderedDivisions.push({
+          division_id: currentDivision.division_id,
+          age_group: currentDivision.age_group,
+          proficiency_level: currentDivision.proficiency_level,
+          gender: currentDivision.gender,
+          category: currentDivision.category,
+          time: currentDivision.time,
+          is_active: currentDivision.is_active,
+          is_complete: currentDivision.is_complete,
+          tournament_order: orderedDivisions.length + 1,
+          status: currentDivision.is_complete ? 'completed' : 
+                 currentDivision.is_active ? 'in_progress' : 'pending'
+        });
+        processedIds.add(currentDivision.division_id);
+      }
+
+      // Move to next division (always ascending through ages)
+      currentIndex++;
+
+      // Handle wrap-around when we reach the end
+      if (currentIndex >= allDivisions.length && !hasWrapped) {
+        // If we started with under 35, wrap to 35+ divisions
+        // If we started with 35+, wrap to under 35 divisions  
+        currentIndex = 0;
+        hasWrapped = true;
+      }
+
+      // Prevent infinite loop
+      if (hasWrapped && currentIndex >= startIndex) {
+        break;
+      }
+    }
+
+    // Calculate cumulative time to show when each division approximately starts
+    let cumulativeTime = 0;
+    const divisionsWithTiming = orderedDivisions.map(division => {
+      const divisionWithTiming = {
+        ...division,
+        estimated_start_time: cumulativeTime, // in minutes from tournament start
+        estimated_start_time_formatted: formatTime(cumulativeTime)
+      };
+      
+      // Add this division's time to cumulative (only if not complete)
+      if (!division.is_complete) {
+        cumulativeTime += division.time;
+      }
+      
+      return divisionWithTiming;
+    });
+
+    res.json({
+      tournament_id: tournament_id,
+      total_divisions: divisionsWithTiming.length,
+      tournament_order: divisionsWithTiming,
+      total_estimated_time: cumulativeTime,
+      total_estimated_time_formatted: formatTime(cumulativeTime)
+    });
+
+  } catch (error) {
+    console.error('Error fetching tournament order:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Helper function to format time in minutes to HH:MM format
+function formatTime(minutes) {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+}
+
+// Fixed version of highest age division function (fixing the typo)
+function higherAgeDivision(allDivisions) {
+  let count = {
+    maxAge: 0,
+    division_id: null
+  };
+  
+  for (const division of allDivisions) {
+    if (division.is_active) {
+      const range = ageRange(division);
+      if (count.maxAge < range[1]) {
+        count.maxAge = range[1];
+        count.division_id = division.division_id;
+      }
+    }
+  }
+  return count;
+}
+
+// Fixed version of lowest age division function
+function lowerAgeDivision(allDivisions) {
+  let count = {
+    minAge: Infinity, // Fixed: was 0, should be Infinity
+    division_id: null
+  };
+  
+  for (const division of allDivisions) {
+    if (division.is_active) {
+      const range = ageRange(division);
+      if (count.minAge > range[0]) {
+        count.minAge = range[0];
+        count.division_id = division.division_id;
+      }
+    }
+  }
+  return count;
+}
+
 module.exports = router;
