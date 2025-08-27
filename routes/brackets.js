@@ -286,6 +286,10 @@ const { division_id } = req.query; // get division_id from query params
                     { is_active: true },   
                     { where: { division_id: bracket.division_id } }
                 );
+                // pseudo code first locate all the mats for this tournament by tournament_id and the amount of them
+                // second check if there are any mats open  by querying mats for is_active = false,if there arnet any
+                // open return a message sayin thre is mat open for this division yet. Then if there are assign the mats_id
+                // thats open to the division. At the end once a division is done asign that mats is_active back to false.
             }
         } else if (user === 'user2') {
             await brackets.update(

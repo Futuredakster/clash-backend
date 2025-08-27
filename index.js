@@ -41,7 +41,8 @@ app.use('/api/stream/tokens', tokenRoutes);
 const recordingsRouter = require("./routes/recordings");
 app.use("/recordings", recordingsRouter);
 
-
+const parentRouter = require("./routes/parent");
+app.use("/parents", parentRouter);
 
 const cartRouter = require("./routes/cart");
 app.use("/cart", cartRouter);

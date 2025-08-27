@@ -20,17 +20,24 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.STRING(50),
       allowNull: false
     },
-
+    parent_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'parent',
+        key: 'parent_id'
+      }
+    },
     email: {
       type: DataTypes.STRING(255),
       allowNull: true
     },
-    created_at: { // Add the created_at field
+    created_at: {
       type: DataTypes.DATE,
       allowNull: true,
       defaultValue: Sequelize.NOW
     },
-    modified_at: { // Add the modified_at field
+    modified_at: {
       type: DataTypes.DATE,
       allowNull: true,
       defaultValue: Sequelize.NOW
@@ -38,20 +45,27 @@ module.exports = function(sequelize, DataTypes) {
   }, {
     sequelize,
     tableName: 'participant',
-     freezeTableName: true, 
-    timestamps: true, // Enable automatic timestamps
-    createdAt: 'created_at', // Specify the name of the createdAt field
-    updatedAt: 'modified_at', // Specify the name of the updatedAt field
+    freezeTableName: true, 
+    timestamps: true,
+    createdAt: 'created_at',
+    updatedAt: 'modified_at',
     indexes: [
       {
         name: "PRIMARY",
         unique: true,
         using: "BTREE",
         fields: [
-          { name: "id" },
+          { name: "participant_id" },
         ]
       },
-    ]
+    ],
+    validate: {
+      emailRequiredForIndependentParticipants() {
+        if (!this.parent_id && !this.email) {
+          throw new Error('Email is required when parent_id is not provided');
+        }
+      }
+    }
   });
 
   participant.associate = function(models) {
@@ -61,21 +75,17 @@ module.exports = function(sequelize, DataTypes) {
       foreignKey: 'participant_id',
       otherKey: 'division_id'
     });
+    
     participant.hasOne(models.EmailVerification, {
       foreignKey: 'participant_id',
-    });    
+    });
+    
+    // Participant belongs to Parent (optional)
+    participant.belongsTo(models.Parent, {
+      foreignKey: 'parent_id',
+      as: 'parent'
+    });
   };
-
-  
-
-  /*/participant.belongsToMany(sequelize.models.Divisions, {
-    through: 'ParticipantDivision',
-    foreignKey: 'participant_id',
-    otherKey: 'division_id'
-  });*/
-
-  
 
   return participant;
 };
-

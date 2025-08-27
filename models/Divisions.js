@@ -32,6 +32,15 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.STRING(20), // Adjust the length as needed
       allowNull: false // Set to true if this field is optional
     },
+    mat_id: {
+  type: DataTypes.INTEGER,
+  allowNull: true, // Nullable initially for existing divisions
+  references: {
+    model: 'Mats',
+    key: 'mat_id'
+  },
+  onDelete: 'SET NULL' // If mat is deleted, don't delete divisions
+},
   time: {
     type: DataTypes.INTEGER,
    allowNull: false,
@@ -109,18 +118,23 @@ module.exports = function(sequelize, DataTypes) {
 
 
   Divisions.associate = function(models) {
-    // Define many-to-many association with Participant
+    // Many-to-many association with Participant
     Divisions.belongsToMany(models.participant, {
       through: 'ParticipantDivision',
       foreignKey: 'division_id',
       otherKey: 'participant_id'
     });
-  };
 
-  Divisions.associate = (models) => {
+    // One-to-many association with ParticipantDivision
     Divisions.hasMany(models.ParticipantDivision, {
       foreignKey: 'division_id',
       as: 'participantDivisions'
+    });
+
+    // Belongs-to association with Mats
+    Divisions.belongsTo(models.Mats, {
+      foreignKey: 'mat_id',
+      as: 'mat'
     });
   };
 

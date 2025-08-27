@@ -2,6 +2,7 @@ const express = require("express");
 const { participant, ParticipantDivision, EmailVerification,cart, Divisions,tournaments,users } = require("../models");
 const router = express.Router();
 const { validateParticipant } = require('../middlewares/validateParticipant')
+const {validateParent} = require("../middlewares/validateParent");
 const Stripe = require("stripe");
 const { Op } = require("sequelize");
 const bodyParser = require("body-parser");
@@ -53,6 +54,18 @@ router.post('/', validateParticipant, async (req, res) => {
         return res.json({ error: "This email is already registered" });
     }
 
+
+      const item = await cart.findOne({
+        where: {
+          participant_id: participant_id,
+          division_id: division_id,
+          tournament_id: tournament_id
+        }
+      });
+      if(item){
+       return res.status(200).json({ message: 'Participant already in cart', cartItem: item });
+      }
+
     // FIXED: Store tournament_id in cart
     const cartItem = await cart.create({
         participant_id: participant_id,
@@ -62,6 +75,68 @@ router.post('/', validateParticipant, async (req, res) => {
 
     res.status(201).json({ message: 'Participant added to cart', cartItem });
 })
+
+
+router.post("/parentAddToCart",validateParent, async (req, res) => {
+  const { participant_id, division_id, tournament_id } = req.body;
+
+   const divisionData = await Divisions.findOne({ 
+        where: { 
+            division_id: division_id,
+            tournament_id: tournament_id 
+        } 
+    });
+    const age_group = divisionData.age_group;
+    const proficiency_level = divisionData.proficiency_level;
+
+    if (!divisionData) {
+        return res.status(404).json({ error: 'Division not found in this tournament' });
+    }
+
+    const participantData = await participant.findOne({ where: { participant_id: participant_id } });
+    const belt_color = participantData.belt_color;
+    const date_of_birth = participantData.date_of_birth;
+
+    if (!date_of_birth || !belt_color || !division_id || !age_group) {
+        console.log("❌ Missing required fields", { date_of_birth, belt_color, division_id, age_group });
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    if (!isAge(age_group, date_of_birth)) {
+        console.log("❌ Age validation failed", { age_group, date_of_birth });
+        return res.json({ error: 'Wrong age' });
+    }
+
+    if (!canCompete(proficiency_level, belt_color)) {
+        console.log("❌ Belt validation failed", { proficiency_level, belt_color });
+        return res.json({ error: "Wrong division level" });
+    }
+
+    if(participantData.email === null && participantData.parent_id === null) {
+        console.log("❌ Participant is not linked to a parent");
+        return res.status(400).json({ error: 'Participant is not linked to a parent' });
+    }
+
+      const item = await cart.findOne({
+        where: {
+          participant_id: participant_id,
+          division_id: division_id,
+          tournament_id: tournament_id
+        }
+      });
+      if(item){
+      return  res.status(200).json({ message: 'Participant already in cart', cartItem: item });
+      }
+
+     const cartItem = await cart.create({
+        participant_id: participant_id,
+        division_id: division_id,
+        tournament_id: tournament_id  // CRUCIAL: Store which tournament this is for
+    });
+
+    res.status(201).json({ message: 'Participant added to cart', cartItem });
+})
+
 
 
 router.get('/', validateParticipant, async (req, res) => {
@@ -88,8 +163,68 @@ router.get('/', validateParticipant, async (req, res) => {
     res.json({ divisions, tournament_id });
 });
 
+router.get("/parent",validateParent, async (req,res) => {
+const { tournament_id } = req.query;
+const parent_id = req.parent.id;
 
+try {
+  // Get all participants for this parent
+  const participants = await participant.findAll({
+    where: { parent_id: parent_id }
+  });
 
+  // Get cart items with participant info for all participants in this tournament
+  const cartItemsWithParticipants = [];
+  
+  for (const participantData of participants) {
+    const participantCartItems = await cart.findAll({
+      where: {
+        participant_id: participantData.participant_id,
+        tournament_id: tournament_id,
+        is_active: true
+      },
+      include: [
+        {
+          model: Divisions,
+          where: { tournament_id: tournament_id }
+        }
+      ]
+    });
+    
+    // Add participant name to each cart item
+    participantCartItems.forEach(cartItem => {
+      cartItemsWithParticipants.push({
+        ...cartItem.toJSON(),
+        participant_name: participantData.name,
+        participant_id: participantData.participant_id
+      });
+    });
+  }
+
+  // Check if there are any cart items
+  if (cartItemsWithParticipants.length === 0) {
+    return res.json({ 
+      tournament_id, 
+      divisions: [],
+      message: "No active cart items found for your participants in this tournament"
+    });
+  }
+
+  res.json({ 
+    tournament_id, 
+    cartItems: cartItemsWithParticipants, // Each item includes division data + participant name
+    participantCount: participants.length,
+    totalCartItems: cartItemsWithParticipants.length
+  });
+
+} catch (error) {
+  console.error('Error fetching parent cart data:', error);
+  res.status(500).json({ 
+    error: 'Failed to fetch cart data',
+    message: error.message 
+  });
+}
+});
 
 router.post("/create-checkout-session", validateParticipant,async (req, res) => {
   try {
@@ -179,6 +314,121 @@ router.post("/create-checkout-session", validateParticipant,async (req, res) => 
         console.error("Error creating checkout session:", err);
         res.status(500).json({ error: err.message });
     }
+});
+
+router.post("/create-checkout-session/parent", validateParent, async (req, res) => {
+  try {
+    const { tournament_id } = req.body;
+    const parent_id = req.parent.id;
+
+    // Get all participants for this parent
+    const participants = await participant.findAll({
+      where: { parent_id: parent_id }
+    });
+
+    if (!participants || participants.length === 0) {
+      return res.status(400).json({ error: "No participants found for this parent" });
+    }
+
+    // Get cart items for all participants in THIS tournament only
+    const allCartItems = [];
+    for (const participantData of participants) {
+      const participantCartItems = await cart.findAll({
+        where: {
+          participant_id: participantData.participant_id,
+          tournament_id: tournament_id,
+          is_active: true,
+          status: { [Op.or]: [null, 'pending'] } // Not already paid
+        },
+        include: [{
+          model: Divisions,
+          where: { tournament_id: tournament_id }
+        }]
+      });
+      
+      // Add participant info to each cart item for reference
+      participantCartItems.forEach(cartItem => {
+        allCartItems.push({
+          ...cartItem.toJSON(),
+          participant_name: participantData.name
+        });
+      });
+    }
+
+    if (!allCartItems || allCartItems.length === 0) {
+      return res.status(400).json({ error: "No items in cart for this tournament" });
+    }
+
+    // Find the tournament
+    const tournament = await tournaments.findOne({ where: { tournament_id } });
+    if (!tournament) {
+      return res.status(404).json({ error: "Tournament not found" });
+    }
+
+    // Find the organizer
+    const organizer = await users.findOne({
+      where: {
+        account_id: tournament.account_id,
+        stripe_account: { [Op.ne]: null },
+      },
+    });
+    
+    if (!organizer) {
+      return res.status(404).json({ error: "Organizer Stripe account not found" });
+    }
+
+    const organizerStripeId = organizer.stripe_account;
+
+    // Build line items from cart - include participant name in product name
+    const lineItems = allCartItems.map((cartItem) => ({
+      price_data: {
+        currency: "usd",
+        product_data: {
+          name: `${cartItem.participant_name} - ${buildDivisionName(cartItem.Division)}`,
+        },
+        unit_amount: cartItem.Division.cost, // in cents
+      },
+      quantity: 1,
+    }));
+
+    // Calculate total application fee (500 cents per item)
+    const totalApplicationFee = allCartItems.length * 500;
+
+    // Create Stripe session
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      mode: "payment",
+      line_items: lineItems,
+      payment_intent_data: {
+        application_fee_amount: totalApplicationFee, // platform fee per item
+        transfer_data: {
+          destination: organizerStripeId,
+        },
+      },
+      success_url: `https://clash-t.netlify.app/CompetitorView`,
+      cancel_url: `https://clash-t.netlify.app/DisplayCart`,
+    });
+
+    // Update cart items with session ID for all participants
+    for (const participantData of participants) {
+      await cart.update(
+        { stripeSessionId: session.id, status: "pending" },
+        {
+          where: {
+            participant_id: participantData.participant_id,
+            tournament_id: tournament_id,
+            is_active: true
+          },
+        }
+      );
+    }
+
+    res.json({ url: session.url });
+    
+  } catch (err) {
+    console.error("Error creating parent checkout session:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 router.post(
