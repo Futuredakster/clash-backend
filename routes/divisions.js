@@ -92,7 +92,13 @@ router.get('/partview', validateParticipant, async (req, res) => {
     allDivisions.sort((a, b) => {
       const [minA, maxA] = ageRange(a);
       const [minB, maxB] = ageRange(b);
-      return minA !== minB ? minA - minB : maxA - maxB;
+      
+      // First sort by age range
+      if (minA !== minB) return minA - minB;
+      if (maxA !== maxB) return maxA - maxB;
+      
+      // If same age range, sort by proficiency level (beginner first)
+      return getProficiencyOrder(a.proficiency_level) - getProficiencyOrder(b.proficiency_level);
     });
 
     const highestAgeDivision = highetAgeDivision(allDivisions); // typo in 'highet'?
@@ -197,7 +203,13 @@ router.get("/parentview", validateParent,async (req, res) => {
     allDivisions.sort((a, b) => {
       const [minA, maxA] = ageRange(a);
       const [minB, maxB] = ageRange(b);
-      return minA !== minB ? minA - minB : maxA - maxB;
+      
+      // First sort by age range
+      if (minA !== minB) return minA - minB;
+      if (maxA !== maxB) return maxA - maxB;
+      
+      // If same age range, sort by proficiency level (beginner first)
+      return getProficiencyOrder(a.proficiency_level) - getProficiencyOrder(b.proficiency_level);
     });
 
     const highestAgeDivision = highetAgeDivision(allDivisions); // typo in 'highet'?
@@ -395,11 +407,17 @@ router.get("/parentview", validateParent,async (req, res) => {
       return res.status(404).json({ error: "No divisions found for this tournament" });
     }
 
-    // Sort divisions by age range (for proper ordering logic)
+    // Sort divisions by age range, then by proficiency level (beginner first)
     allDivisions.sort((a, b) => {
       const [minA, maxA] = ageRange(a);
       const [minB, maxB] = ageRange(b);
-      return minA !== minB ? minA - minB : maxA - maxB;
+      
+      // First sort by age range
+      if (minA !== minB) return minA - minB;
+      if (maxA !== maxB) return maxA - maxB;
+      
+      // If same age range, sort by proficiency level (beginner first)
+      return getProficiencyOrder(a.proficiency_level) - getProficiencyOrder(b.proficiency_level);
     });
 
     // Check if there are any active divisions under 35
@@ -512,6 +530,22 @@ function formatTime(minutes) {
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
   return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+}
+
+// Helper function to get proficiency level order (beginner first)
+function getProficiencyOrder(proficiency) {
+  const order = {
+    'beginner': 1,
+    'Beginner': 1,
+    'BEGINNER': 1,
+    'intermediate': 2,
+    'Intermediate': 2,
+    'INTERMEDIATE': 2,
+    'advanced': 3,
+    'Advanced': 3,
+    'ADVANCED': 3
+  };
+  return order[proficiency] || 999; // Unknown proficiency levels go last
 }
 
 // Fixed version of highest age division function (fixing the typo)
