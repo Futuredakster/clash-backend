@@ -3,6 +3,7 @@ const router = express.Router();
 const {Divisions} = require ("../models");
 const {participant} = require("../models");
 const {ParticipantDivision} = require("../models");
+const {Mats} = require("../models");
 const { validateToken } = require("../middlewares/AuthMiddleware");
 const { validateParticipant } = require('../middlewares/validateParticipant')
 const {validateParent} = require("../middlewares/validateParent");
@@ -397,9 +398,17 @@ router.get("/parentview", validateParent,async (req, res) => {
       return res.status(400).json({ error: "Tournament ID is required" });
     }
 
-    // Get all divisions for the tournament
+    // Get all divisions for the tournament with mat information
     const allDivisions = await Divisions.findAll({
       where: { tournament_id: tournament_id },
+      include: [
+        {
+          model: Mats,
+          as: 'mat',
+          attributes: ['mat_id', 'mat_name'],
+          required: false // Left join to include divisions without mats
+        }
+      ],
       order: [['division_id', 'ASC']] // Consistent ordering
     });
 
@@ -472,7 +481,9 @@ router.get("/parentview", validateParent,async (req, res) => {
           is_complete: currentDivision.is_complete,
           tournament_order: orderedDivisions.length + 1,
           status: currentDivision.is_complete ? 'completed' : 
-                 currentDivision.is_active ? 'in_progress' : 'pending'
+                 currentDivision.is_active ? 'in_progress' : 'pending',
+          mat_id: currentDivision.mat ? currentDivision.mat.mat_id : null,
+          mat_name: currentDivision.mat ? currentDivision.mat.mat_name : null
         });
         processedIds.add(currentDivision.division_id);
       }
@@ -524,6 +535,269 @@ router.get("/parentview", validateParent,async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// Route to automatically assign divisions to mats
+router.post('/assign-mats', validateToken, async (req, res) => {
+  const { tournament_id } = req.body;
+
+  try {
+    console.log('Assign mats request for tournament:', tournament_id);
+    
+    if (!tournament_id) {
+      return res.status(400).json({ error: "Tournament ID is required" });
+    }
+
+    // Get all divisions for the tournament in proper order
+    const allDivisions = await Divisions.findAll({
+      where: { tournament_id: tournament_id },
+      order: [['division_id', 'ASC']]
+    });
+
+    if (!allDivisions || allDivisions.length === 0) {
+      return res.status(404).json({ error: "No divisions found for this tournament" });
+    }
+
+    // Sort divisions by age range, then by proficiency level (same logic as tournament-order)
+    allDivisions.sort((a, b) => {
+      const [minA, maxA] = ageRange(a);
+      const [minB, maxB] = ageRange(b);
+      
+      // First sort by age range
+      if (minA !== minB) return minA - minB;
+      if (maxA !== maxB) return maxA - maxB;
+      
+      // If same age range, sort by proficiency level (beginner first)
+      return getProficiencyOrder(a.proficiency_level) - getProficiencyOrder(b.proficiency_level);
+    });
+
+    // Get all active mats for this tournament
+    const mats = await Mats.findAll({
+      where: { 
+        tournament_id: tournament_id, 
+        is_active: true 
+      },
+      order: [['mat_id', 'ASC']] // Consistent ordering
+    });
+
+    if (!mats || mats.length === 0) {
+      return res.status(404).json({ error: "No active mats found for this tournament" });
+    }
+
+    // Clear any existing mat assignments for this tournament
+    await Divisions.update(
+      { mat_id: null },
+      { where: { tournament_id: tournament_id } }
+    );
+
+    // Only assign the first division to each mat initially
+    // Subsequent divisions will be assigned automatically when current divisions complete
+    const assignments = [];
+    const matsAssigned = new Set();
+    
+    for (let i = 0; i < allDivisions.length && matsAssigned.size < mats.length; i++) {
+      const division = allDivisions[i];
+      const matIndex = i % mats.length;
+      const assignedMat = mats[matIndex];
+
+      // Only assign if this mat hasn't been assigned yet
+      if (!matsAssigned.has(assignedMat.mat_id)) {
+        // Update the division with mat assignment and make it active
+        await Divisions.update(
+          { 
+            mat_id: assignedMat.mat_id,
+            is_active: true // First division on each mat becomes active
+          },
+          { where: { division_id: division.division_id } }
+        );
+
+        assignments.push({
+          division_id: division.division_id,
+          age_group: division.age_group,
+          proficiency_level: division.proficiency_level,
+          gender: division.gender,
+          category: division.category,
+          mat_id: assignedMat.mat_id,
+          mat_name: assignedMat.mat_name,
+          assignment_order: i + 1,
+          is_active: true
+        });
+
+        matsAssigned.add(assignedMat.mat_id);
+      }
+    }
+
+    res.json({
+      message: "Mats assigned successfully",
+      tournament_id: tournament_id,
+      total_divisions: allDivisions.length,
+      total_mats: mats.length,
+      assignments: assignments
+    });
+
+  } catch (error) {
+    console.error('Error assigning mats:', error);
+    console.error('Error details:', error.message);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      error: 'Failed to assign mats',
+      details: error.message 
+    });
+  }
+});
+
+// Route to mark division as complete and trigger mat reassignment
+router.patch('/complete', validateToken, async (req, res) => {
+  const { division_id } = req.body;
+
+  try {
+    if (!division_id) {
+      return res.status(400).json({ error: "Division ID is required" });
+    }
+
+    // Get the completed division
+    const completedDivision = await Divisions.findOne({
+      where: { division_id: division_id }
+    });
+
+    if (!completedDivision) {
+      return res.status(404).json({ error: "Division not found" });
+    }
+
+    // Mark the division as complete and inactive
+    await Divisions.update(
+      { is_complete: true, is_active: false },
+      { where: { division_id: division_id } }
+    );
+
+    // If this division was assigned to a mat, reassign that mat to the next division
+    let reassignmentResult = null;
+    if (completedDivision.mat_id) {
+      reassignmentResult = await reassignMatToNextDivision(completedDivision.tournament_id, completedDivision.mat_id);
+    }
+
+    res.json({
+      message: "Division marked as complete",
+      division_id: division_id,
+      mat_reassigned: !!completedDivision.mat_id,
+      next_division: reassignmentResult
+    });
+
+  } catch (error) {
+    console.error('Error completing division:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Helper function to reassign mat to next available division following tournament order
+async function reassignMatToNextDivision(tournament_id, mat_id) {
+  try {
+    // Get all divisions for the tournament
+    const allDivisions = await Divisions.findAll({
+      where: { tournament_id: tournament_id },
+      order: [['division_id', 'ASC']]
+    });
+
+    if (!allDivisions || allDivisions.length === 0) {
+      return null;
+    }
+
+    // Use the SAME ordering logic as tournament-order route
+    allDivisions.sort((a, b) => {
+      const [minA, maxA] = ageRange(a);
+      const [minB, maxB] = ageRange(b);
+      
+      // First sort by age range
+      if (minA !== minB) return minA - minB;
+      if (maxA !== maxB) return maxA - maxB;
+      
+      // If same age range, sort by proficiency level (beginner first)
+      return getProficiencyOrder(a.proficiency_level) - getProficiencyOrder(b.proficiency_level);
+    });
+
+    // Determine starting point based on tournament logic (same as tournament-order)
+    const hasUnder35Divisions = allDivisions.some(division => {
+      if (!division.is_active && division.is_complete) return false;
+      const range = ageRange(division);
+      return range[1] < 35;
+    });
+
+    let startingDivision;
+    if (hasUnder35Divisions) {
+      startingDivision = lowerAgeDivision(allDivisions);
+    } else {
+      startingDivision = higherAgeDivision(allDivisions);
+    }
+
+    if (!startingDivision.division_id) {
+      return null;
+    }
+
+    // Find the starting division index
+    const startIndex = allDivisions.findIndex(
+      div => div.division_id === startingDivision.division_id
+    );
+
+    if (startIndex === -1) {
+      return null;
+    }
+
+    // Process divisions in tournament order to find next available
+    let currentIndex = startIndex;
+    let hasWrapped = false;
+
+    while (currentIndex < allDivisions.length) {
+      const currentDivision = allDivisions[currentIndex];
+      
+      // Check if this division is available (not active, not complete, no mat assigned)
+      if (currentDivision && 
+          !currentDivision.is_active && 
+          !currentDivision.is_complete &&
+          !currentDivision.mat_id) {
+        
+        // Assign this division to the mat and make it active
+        await Divisions.update(
+          { 
+            mat_id: mat_id, 
+            is_active: true 
+          },
+          { where: { division_id: currentDivision.division_id } }
+        );
+
+        console.log(`Mat ${mat_id} reassigned to division ${currentDivision.division_id} (${currentDivision.age_group} ${currentDivision.proficiency_level})`);
+        
+        return {
+          division_id: currentDivision.division_id,
+          age_group: currentDivision.age_group,
+          proficiency_level: currentDivision.proficiency_level,
+          gender: currentDivision.gender,
+          category: currentDivision.category
+        };
+      }
+
+      // Move to next division (always ascending through ages)
+      currentIndex++;
+
+      // Handle wrap-around when we reach the end
+      if (currentIndex >= allDivisions.length && !hasWrapped) {
+        currentIndex = 0;
+        hasWrapped = true;
+      }
+
+      // Prevent infinite loop
+      if (hasWrapped && currentIndex >= startIndex) {
+        break;
+      }
+    }
+
+    // No available divisions found
+    console.log(`No more divisions available for mat ${mat_id}`);
+    return null;
+
+  } catch (error) {
+    console.error('Error reassigning mat:', error);
+    throw error;
+  }
+}
 
 // Helper function to format time in minutes to HH:MM format
 function formatTime(minutes) {
@@ -587,3 +861,4 @@ function lowerAgeDivision(allDivisions) {
 }
 
 module.exports = router;
+module.exports.reassignMatToNextDivision = reassignMatToNextDivision;

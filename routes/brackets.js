@@ -536,12 +536,33 @@ let isActiveBrackets=0;
 }
 count = count - isActiveBrackets;
 if(count === 0){
+  // Get the division before updating it
+  const division = await Divisions.findOne({
+    where: { division_id: division_id }
+  });
+
   await Divisions.update(
     { is_complete: true,
       is_active: false
     },
     { where: { division_id: division_id } }
   );
+
+  // If this division was assigned to a mat, trigger automatic reassignment
+  if (division && division.mat_id) {
+    console.log(`Division ${division_id} completed on mat ${division.mat_id}, triggering reassignment...`);
+    
+    // Import the reassignment function from divisions route
+    try {
+      const { reassignMatToNextDivision } = require('./divisions');
+      if (reassignMatToNextDivision) {
+        await reassignMatToNextDivision(division.tournament_id, division.mat_id);
+      }
+    } catch (error) {
+      console.error('Error during automatic mat reassignment:', error);
+      // Don't fail the division completion if reassignment fails
+    }
+  }
 }
 console.log("time", timeLeft);
 console.log("count", count);
