@@ -7,6 +7,7 @@ const { Op } = require("sequelize");
 const { cloudinary, storage } = require("../utils/cloudinary");
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
 const { validateParticipant } = require('../middlewares/validateParticipant')
+const {validateParent} = require("../middlewares/validateParent");
 
 const upload = multer({ storage });
 
@@ -152,6 +153,49 @@ router.get('/OneParticipant', validateParticipant, async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+router.get("/parent",validateParent, async (req, res) => {
+  try {
+  const parent_id = req.parent.parent_id;
+  console.log(parent_id)
+  const participants = await participant.findAll({ where: { parent_id } });
+  const participantIds = participants.map(p => p.participant_id);
+  const participantDivisions = await ParticipantDivision.findAll({
+      where: { participant_id: { [Op.in]: participantIds } },
+    });
+    if (participantDivisions.length === 0) {
+      return res.status(404).json({ error: "Participant not found in any division" });
+    }
+
+    const divisionIds = participantDivisions.map(pd => pd.division_id);
+
+    // Get all divisions
+    const divisions = await Divisions.findAll({
+      where: { division_id: { [Op.in]: divisionIds } },
+    });
+
+    if (divisions.length === 0) {
+      return res.status(404).json({ error: "Division not found" });
+    }
+
+    // Get all tournaments
+    const tournamentIds = divisions.map(d => d.tournament_id);
+    const tournamentsList = await tournaments.findAll({
+      where: { tournament_id: { [Op.in]: tournamentIds } },
+    });
+
+    if (tournamentsList.length === 0) {
+      return res.status(404).json({ error: "Tournament not found" });
+    }
+
+    res.json(tournamentsList);
+
+  } catch (err) {
+    console.error("Error fetching participant and division:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+
+})
 
 
 router.get("/default", async (req, res) => {

@@ -223,7 +223,7 @@ router.post("/", async (req, res) => {
   });
 
 
-  router.get("/participent",validateParticipant, async (req, res) => {
+  router.get("/participent", async (req, res) => {
 const { division_id } = req.query; // get division_id from query params
     if (!division_id) {
       return res.status(400).json({ error: "division_id is required" });

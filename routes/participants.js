@@ -162,7 +162,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.get('/All', validateParticipant, async (req, res) => {
+router.get('/All', async (req, res) => {
   try {
     const { division_id } = req.query; // get division_id from query params
     if (!division_id) {

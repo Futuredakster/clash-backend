@@ -5,6 +5,7 @@ const {participant} = require("../models");
 const {ParticipantDivision} = require("../models");
 const { validateToken } = require("../middlewares/AuthMiddleware");
 const { validateParticipant } = require('../middlewares/validateParticipant')
+const {validateParent} = require("../middlewares/validateParent");
 const { Op } = require("sequelize");
 const { Sequelize } = require('sequelize');
 
@@ -167,6 +168,110 @@ router.get('/partview', validateParticipant, async (req, res) => {
   }
 });
 
+router.get("/parentview", validateParent,async (req, res) => {
+     const parent_id = req.parent.parent_id;
+     const {tournamentId} = req.query;
+     const participants = await participant.findAll({ where: { parent_id } });
+     const participantIds = participants.map(p => p.participant_id);
+      let time = 0;
+
+  try {
+     const participantDivisions = await ParticipantDivision.findAll({
+          where: { participant_id: { [Op.in]: participantIds } },
+        });
+
+    if (!participantDivisions || participantDivisions.length === 0) {
+      return res.status(404).json({ error: "Participant not found in any division" });
+    }
+
+    const divisionIds = participantDivisions.map(pd => pd.division_id);
+
+
+      const divisions = await Divisions.findAll({
+          where: { division_id: { [Op.in]: divisionIds }, tournament_id: tournamentId },
+        });
+    
+    const allDivisions = await Divisions.findAll({
+      where : {tournament_id: divisions[0].tournament_id},
+    });
+    allDivisions.sort((a, b) => {
+      const [minA, maxA] = ageRange(a);
+      const [minB, maxB] = ageRange(b);
+      return minA !== minB ? minA - minB : maxA - maxB;
+    });
+
+    const highestAgeDivision = highetAgeDivision(allDivisions); // typo in 'highet'?
+    const lowerAgeDivision = lowestAgeDivision(allDivisions);
+    console.log(highestAgeDivision);
+    console.log(lowerAgeDivision);
+    for (const division of divisions) {
+      const myAgeRange = ageRange(division);
+
+      if (myAgeRange[1] > 35) {
+        let startIndex = allDivisions.findIndex(
+          div => div.division_id === highestAgeDivision.division_id
+        );
+        console.log(startIndex);
+        console.log(allDivisions.length);
+         if(startIndex === allDivisions.length - 1){
+          startIndex =0;
+         }
+        for (let i = startIndex; i < allDivisions.length; i++) {
+          const range = ageRange(allDivisions[i]);
+           console.log("range:",range);
+          if (
+            range[0] === myAgeRange[0] &&
+            range[1] === myAgeRange[1]
+          ) {
+            console.log("break");
+            break;
+          }
+
+                  if (
+            allDivisions[i] && 
+            (range[0] !== myAgeRange[0] || range[1] !== myAgeRange[1]) &&
+            !allDivisions[i].is_complete
+          )
+          {
+            console.log("time", allDivisions[i].time);
+            time += allDivisions[i].time;
+            console.log("time after addition:", time);
+          }
+        }
+      } else if (myAgeRange[1]<35) {
+        console.log("else");
+        const startIndex = allDivisions.findIndex(
+          div => div.division_id === lowerAgeDivision.division_id
+        );
+
+        for (let i = startIndex; i < allDivisions.length; i++) {
+          const range = ageRange(allDivisions[i]);
+
+          if (
+            range[0] === myAgeRange[0] &&
+            range[1] === myAgeRange[1]
+          ) {
+            break;
+          }
+
+          if (
+          allDivisions[i] && 
+          (range[0] !== myAgeRange[0] || range[1] !== myAgeRange[1]) &&
+          !allDivisions[i].is_complete
+        )
+        {
+            time += allDivisions[i].time;
+          }
+        }
+      }
+    }
+      console.log("Total time for participant:", time);
+    res.json({ divisions, total_time: time });
+  } catch (err) {
+    console.error("Error fetching participant and divisions:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
   router.get('/default',async (req,res) => {
     const { division_id } = req.query;
     const divisions = await Divisions.findOne({
