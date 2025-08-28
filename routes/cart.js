@@ -163,6 +163,52 @@ router.get('/', validateParticipant, async (req, res) => {
     res.json({ divisions, tournament_id });
 });
 
+router.get("/count", validateParent, async (req, res) => {
+  const { tournament_id } = req.query;
+  const parent_id = req.parent.id;
+  const participants = await participant.findAll({
+    where: { parent_id: parent_id }
+  });
+  
+  let totalCount = 0;
+  for (const participantData of participants) {
+    const count = await cart.count({
+      where: {
+        participant_id: participantData.participant_id,
+        tournament_id: tournament_id,
+        is_active: true
+      },
+      include: [
+        {
+          model: Divisions,
+          where: { tournament_id: tournament_id }
+        }
+      ]
+    });
+    totalCount += count;
+  }
+  return res.json(totalCount);
+});
+
+router.get("/counts", validateParticipant, async (req, res) => {
+  const { tournament_id } = req.query;
+  const participant_id = req.participant.participant_id;
+    const count = await cart.count({
+      where: {
+        participant_id: participant_id,
+        tournament_id: tournament_id,
+        is_active: true
+      },
+      include: [
+        {
+          model: Divisions,
+          where: { tournament_id: tournament_id }
+        }
+      ]
+    });
+return res.json(count);
+});
+
 router.get("/parent",validateParent, async (req,res) => {
 const { tournament_id } = req.query;
 const parent_id = req.parent.id;
