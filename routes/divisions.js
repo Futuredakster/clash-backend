@@ -169,7 +169,7 @@ router.get('/partview', validateParticipant, async (req, res) => {
 });
 
 router.get("/parentview", validateParent,async (req, res) => {
-     const parent_id = req.parent.parent_id;
+     const parent_id = req.parent.id;
      const {tournamentId} = req.query;
      const participants = await participant.findAll({ where: { parent_id } });
      const participantIds = participants.map(p => p.participant_id);

@@ -123,7 +123,7 @@ router.post('/code', async (req,res) => {
             await verify.update({ verified: true });
         
             // Create a JWT token and send it back
-            const parentToken = jwt.sign({ parent_id, name }, "your_jwt_secret", {
+            const parentToken = jwt.sign({ id: parent_id, name }, "your_jwt_secret", {
               expiresIn: '30m',
             });
          

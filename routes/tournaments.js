@@ -156,7 +156,7 @@ router.get('/OneParticipant', validateParticipant, async (req, res) => {
 
 router.get("/parent",validateParent, async (req, res) => {
   try {
-  const parent_id = req.parent.parent_id;
+  const parent_id = req.parent.id;
   console.log(parent_id)
   const participants = await participant.findAll({ where: { parent_id } });
   const participantIds = participants.map(p => p.participant_id);
