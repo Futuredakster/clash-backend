@@ -59,7 +59,8 @@ router.post('/', validateParticipant, async (req, res) => {
         where: {
           participant_id: participant_id,
           division_id: division_id,
-          tournament_id: tournament_id
+          tournament_id: tournament_id,
+          is_active: true
         }
       });
       if(item){
@@ -121,7 +122,8 @@ router.post("/parentAddToCart",validateParent, async (req, res) => {
         where: {
           participant_id: participant_id,
           division_id: division_id,
-          tournament_id: tournament_id
+          tournament_id: tournament_id,
+          is_active: true
         }
       });
       if(item){
@@ -160,7 +162,19 @@ router.get('/', validateParticipant, async (req, res) => {
         } 
     });
     
-    res.json({ divisions, tournament_id });
+    // Combine cart items with division data
+    const cartItemsWithDivisions = cartItems.map(cartItem => {
+        const division = divisions.find(d => d.division_id === cartItem.division_id);
+        return {
+            ...division.toJSON(),
+            cart_id: cartItem.cart_id,
+            participant_id: cartItem.participant_id,
+            tournament_id: cartItem.tournament_id,
+            status: cartItem.status
+        };
+    });
+    
+    res.json({ divisions: cartItemsWithDivisions, tournament_id });
 });
 
 router.get("/count", validateParent, async (req, res) => {
@@ -650,7 +664,76 @@ async function isEmailAlreadyInDivision(email, divisionId) {
   return count > 0;
 }
 
+// Delete cart item for participant
+router.delete('/item/:cart_id', validateParticipant, async (req, res) => {
+  try {
+    const { cart_id } = req.params;
+    const participant_id = req.participant.participant_id;
 
+    // Find the cart item and verify it belongs to this participant
+    const cartItem = await cart.findOne({
+      where: {
+        cart_id: cart_id,
+        participant_id: participant_id,
+        is_active: true,
+        status: { [Op.or]: [null, 'pending'] } // Can't delete paid items
+      }
+    });
 
+    if (!cartItem) {
+      return res.status(404).json({ error: 'Cart item not found or cannot be deleted' });
+    }
+
+    // Mark as inactive instead of deleting
+    await cart.update(
+      { is_active: false },
+      { where: { cart_id: cart_id } }
+    );
+
+    res.json({ message: 'Item removed from cart successfully' });
+  } catch (error) {
+    console.error('Error deleting cart item:', error);
+    res.status(500).json({ error: 'Failed to remove item from cart' });
+  }
+});
+
+// Delete cart item for parent
+router.delete('/parent/:cart_id', validateParent, async (req, res) => {
+  try {
+    const { cart_id } = req.params;
+    const parent_id = req.parent.id;
+
+    // Find the cart item and verify it belongs to one of this parent's children
+    const cartItem = await cart.findOne({
+      where: {
+        cart_id: cart_id,
+        is_active: true,
+        status: { [Op.or]: [null, 'pending'] } // Can't delete paid items
+      },
+      include: [{
+        model: participant,
+        where: { parent_id: parent_id }
+      }]
+    });
+
+    if (!cartItem) {
+      return res.status(404).json({ error: 'Cart item not found or cannot be deleted' });
+    }
+
+    // Mark as inactive instead of deleting
+    await cart.update(
+      { is_active: false },
+      { where: { cart_id: cart_id } }
+    );
+
+    res.json({ 
+      message: 'Item removed from cart successfully',
+      participant_name: cartItem.participant.name 
+    });
+  } catch (error) {
+    console.error('Error deleting parent cart item:', error);
+    res.status(500).json({ error: 'Failed to remove item from cart' });
+  }
+});
 
 module.exports = router;
