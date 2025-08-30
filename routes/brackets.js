@@ -435,14 +435,70 @@ router.delete('/byOne', async (req, res) => {
 
 
 
-router.post('/initial', async (req, res) => {
-  const { tournament_id } = req.body;
+// Check if tournament has brackets created
+router.get('/tournament-status/:tournament_id', async (req, res) => {
+  const { tournament_id } = req.params;
   
   try {
+    // Get all division IDs for this tournament
     const divisions = await Divisions.findAll({
       where: { tournament_id },
       attributes: ['division_id']
     });
+
+    if (divisions.length === 0) {
+      return res.json({ hasbrackets: false, message: "No divisions found" });
+    }
+
+    const divisionIds = divisions.map(d => d.division_id);
+
+    // Check if brackets exist for any division in this tournament
+    const existingBrackets = await brackets.findOne({
+      where: {
+        division_id: divisionIds
+      }
+    });
+
+    return res.json({ 
+      hasbrackets: !!existingBrackets,
+      tournament_id: parseInt(tournament_id)
+    });
+  } catch (error) {
+    console.error('Error checking tournament bracket status:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/initial', async (req, res) => {
+  const { tournament_id } = req.body;
+  
+  try {
+    // Get all division IDs for this tournament
+    const divisions = await Divisions.findAll({
+      where: { tournament_id },
+      attributes: ['division_id']
+    });
+
+    if (divisions.length === 0) {
+      return res.status(400).json({ 
+        error: "No divisions found for this tournament" 
+      });
+    }
+
+    const divisionIds = divisions.map(d => d.division_id);
+
+    // Check if brackets already exist for any division in this tournament
+    const existingBrackets = await brackets.findOne({
+      where: {
+        division_id: divisionIds
+      }
+    });
+
+    if (existingBrackets) {
+      return res.status(400).json({ 
+        error: "Brackets have already been created for this tournament" 
+      });
+    }
 
     for (const division of divisions) {
       const division_id = division.division_id;
