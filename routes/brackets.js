@@ -93,11 +93,13 @@ router.post("/", async (req, res) => {
         division_id,
         participant_id1,
         participant_id2: -1,
-        win_user1: false,
+        win_user1: true,  // Automatically win against bye
         win_user2: false,
         user1,
         user2,
-        round: nextRound
+        round: nextRound,
+        is_complete: true,  // Mark as complete since bye auto-resolves
+        points_user1: 8     // Give winning points
       });
 
       return res.json({
@@ -154,11 +156,13 @@ router.post("/", async (req, res) => {
           division_id,
           participant_id1,
           participant_id2: -1,
-          win_user1: false,
+          win_user1: true,  // Automatically win against bye
           win_user2: false,
           user1,
           user2,
-          round: nextRound
+          round: nextRound,
+          is_complete: true,  // Mark as complete since bye auto-resolves
+          points_user1: 8     // Give winning points
         })
       );
     }
@@ -545,11 +549,13 @@ router.post('/initial', async (req, res) => {
           division_id,
           participant_id1: p1.participant_id,
           participant_id2: -1,
-          win_user1: false,
+          win_user1: true,  // Automatically win against bye
           win_user2: false,
           user1: p1.name,
           user2: "Bi",
-          round: 1
+          round: 1,
+          is_complete: true,  // Mark as complete since bye auto-resolves
+          points_user1: 8     // Give winning points
         });
       }
       updateDivisionTime(division_id);
