@@ -34,6 +34,96 @@ router.get("/auth", validateParent, async (req, res) => {
   res.json(req.parent);
 })
 
+router.get("/details", validateParent, async (req, res) => {
+  const parent = req.parent;
+  try {
+    const parentDetails = await Parent.findOne({ 
+      where: { parent_id: parent.id },
+      attributes: ['parent_id', 'name', 'email', 'created_at']
+    });
+    
+    if (!parentDetails) {
+      return res.status(404).json({ error: "Parent not found" });
+    }
+    
+    res.json({
+      id: parentDetails.parent_id,
+      name: parentDetails.name,
+      email: parentDetails.email,
+      created_at: parentDetails.created_at
+    });
+  } catch (error) {
+    console.error("Error fetching parent details:", error);
+    res.status(500).json({ error: "Failed to fetch parent details" });
+  }
+})
+
+router.put("/details", validateParent, async (req, res) => {
+  const { name, email } = req.body;
+  const parent = req.parent;
+  
+  try {
+    // Find the parent record
+    const parentRecord = await Parent.findOne({ 
+      where: { parent_id: parent.id }
+    });
+    
+    if (!parentRecord) {
+      return res.status(404).json({ error: "Parent not found" });
+    }
+    
+    // Build update object with only provided fields
+    const updateData = {};
+    if (name !== undefined && name.trim() !== '') {
+      updateData.name = name.trim();
+    }
+    if (email !== undefined && email.trim() !== '') {
+      const trimmedEmail = email.trim();
+      
+      // Check if email is being changed and if new email already exists
+      if (trimmedEmail !== parentRecord.email) {
+        const existingParent = await Parent.findOne({ 
+          where: { 
+            email: trimmedEmail,
+            parent_id: { [Op.ne]: parent.id } // Exclude current parent
+          }
+        });
+        
+        if (existingParent) {
+          return res.status(400).json({ error: "Email address is already in use by another account" });
+        }
+      }
+      
+      updateData.email = trimmedEmail;
+    }
+    
+    // Only update if there's something to update
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: "No valid fields to update" });
+    }
+    
+    // Update the parent record
+    Object.assign(parentRecord, updateData);
+    await parentRecord.save({ validate: true });
+    
+    res.json({
+      message: "Parent details updated successfully",
+      parent: {
+        id: parentRecord.parent_id,
+        name: parentRecord.name,
+        email: parentRecord.email
+      }
+    });
+    
+  } catch (error) {
+    console.error("Error updating parent details:", error);
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(400).json({ error: "Email address is already in use" });
+    }
+    res.status(500).json({ error: "Failed to update parent details" });
+  }
+})
+
 router.post("/participants", validateParent, async (req, res) => {
   const { parent_id, children } = req.body;
   
@@ -140,6 +230,56 @@ const isEmailAlreadyInDivision = async (email) => {
     const parent = await Parent.findOne({ where: { email} });
     return parent !== null;
 };
+
+router.put("/participants/:participant_id", validateParent, async (req, res) => {
+  const { participant_id } = req.params;
+  const { name, date_of_birth, belt_color } = req.body;
+  const parent = req.parent;
+  
+  try {
+    // First, verify the participant belongs to this parent
+    const child = await participant.findOne({ 
+      where: { 
+        participant_id: participant_id,
+        parent_id: parent.id 
+      } 
+    });
+    
+    if (!child) {
+      return res.status(404).json({ error: "Child not found or not authorized" });
+    }
+    
+    // Build update object with only provided fields
+    const updateData = {};
+    if (name !== undefined && name.trim() !== '') {
+      updateData.name = name.trim();
+    }
+    if (date_of_birth !== undefined && date_of_birth !== '') {
+      updateData.date_of_birth = date_of_birth;
+    }
+    if (belt_color !== undefined && belt_color !== '') {
+      updateData.belt_color = belt_color;
+    }
+    
+    // Only update if there's something to update
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: "No valid fields to update" });
+    }
+    
+    // Update the participant instance directly
+    Object.assign(child, updateData);
+    await child.save({ validate: true });
+    
+    res.json({
+      message: "Child updated successfully",
+      participant: child
+    });
+    
+  } catch (error) {
+    console.error("Error updating participant:", error);
+    res.status(500).json({ error: "Failed to update child information" });
+  }
+});
 
 const emailer = (email, message) => {
   const msg = resend.emails.send({

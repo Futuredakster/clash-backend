@@ -14,11 +14,11 @@ module.exports = function(sequelize, DataTypes) {
     },
     date_of_birth: {
       type: DataTypes.DATEONLY,
-      allowNull: false
+      allowNull: true
     },
     belt_color: {
       type: DataTypes.STRING(50),
-      allowNull: false
+      allowNull: true
     },
     parent_id: {
       type: DataTypes.INTEGER,
@@ -61,8 +61,11 @@ module.exports = function(sequelize, DataTypes) {
     ],
     validate: {
       emailRequiredForIndependentParticipants() {
-        if (!this.parent_id && !this.email) {
-          throw new Error('Email is required when parent_id is not provided');
+        // Only validate if parent_id or email fields are being changed or for new records
+        if (this.isNewRecord || this.changed('parent_id') || this.changed('email')) {
+          if (!this.parent_id && !this.email) {
+            throw new Error('Email is required when parent_id is not provided');
+          }
         }
       }
     }
