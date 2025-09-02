@@ -245,6 +245,106 @@ router.post('/login', async (req, res) => {
 router.get('/auths', validateParticipant, (req,res) => {
 res.json(req.participant);
 });
+
+router.get('/details', validateParticipant, async (req, res) => {
+  const participantToken = req.participant;
+  try {
+    const participantDetails = await participant.findOne({ 
+      where: { participant_id: participantToken.participant_id },
+      attributes: ['participant_id', 'name', 'date_of_birth', 'belt_color', 'email', 'created_at']
+    });
+    
+    if (!participantDetails) {
+      return res.status(404).json({ error: "Participant not found" });
+    }
+    
+    res.json({
+      id: participantDetails.participant_id,
+      name: participantDetails.name,
+      date_of_birth: participantDetails.date_of_birth,
+      belt_color: participantDetails.belt_color,
+      email: participantDetails.email,
+      created_at: participantDetails.created_at
+    });
+  } catch (error) {
+    console.error("Error fetching participant details:", error);
+    res.status(500).json({ error: "Failed to fetch participant details" });
+  }
+});
+
+router.put('/details', validateParticipant, async (req, res) => {
+  const { name, email, date_of_birth, belt_color } = req.body;
+  const participantToken = req.participant;
+  
+  try {
+    // Find the participant record
+    const participantRecord = await participant.findOne({ 
+      where: { participant_id: participantToken.participant_id }
+    });
+    
+    if (!participantRecord) {
+      return res.status(404).json({ error: "Participant not found" });
+    }
+    
+    // Build update object with only provided fields
+    const updateData = {};
+    if (name !== undefined && name.trim() !== '') {
+      updateData.name = name.trim();
+    }
+    if (email !== undefined && email.trim() !== '') {
+      const trimmedEmail = email.trim();
+      
+      // Check if email is being changed and if new email already exists
+      if (trimmedEmail !== participantRecord.email) {
+        const existingParticipant = await participant.findOne({ 
+          where: { 
+            email: trimmedEmail,
+            participant_id: { [Op.ne]: participantToken.participant_id } // Exclude current participant
+          }
+        });
+        
+        if (existingParticipant) {
+          return res.status(400).json({ error: "Email address is already in use by another participant" });
+        }
+      }
+      
+      updateData.email = trimmedEmail;
+    }
+    if (date_of_birth !== undefined && date_of_birth !== '') {
+      updateData.date_of_birth = date_of_birth;
+    }
+    if (belt_color !== undefined && belt_color !== '') {
+      updateData.belt_color = belt_color;
+    }
+    
+    // Only update if there's something to update
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: "No valid fields to update" });
+    }
+    
+    // Update the participant record
+    Object.assign(participantRecord, updateData);
+    await participantRecord.save({ validate: true });
+    
+    res.json({
+      message: "Participant details updated successfully",
+      participant: {
+        id: participantRecord.participant_id,
+        name: participantRecord.name,
+        email: participantRecord.email,
+        date_of_birth: participantRecord.date_of_birth,
+        belt_color: participantRecord.belt_color
+      }
+    });
+    
+  } catch (error) {
+    console.error("Error updating participant details:", error);
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(400).json({ error: "Email address is already in use" });
+    }
+    res.status(500).json({ error: "Failed to update participant details" });
+  }
+});
   
 // Email function -----------------------------------------------------------------------------------------------------------------------------------
 const emailer = (email, message) => {
