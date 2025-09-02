@@ -281,6 +281,42 @@ router.put("/participants/:participant_id", validateParent, async (req, res) => 
   }
 });
 
+router.delete("/participants/:participant_id", validateParent, async (req, res) => {
+  const { participant_id } = req.params;
+  const parent = req.parent;
+  
+  try {
+    // First, verify the participant belongs to this parent
+    const child = await participant.findOne({ 
+      where: { 
+        participant_id: participant_id,
+        parent_id: parent.id 
+      } 
+    });
+    
+    if (!child) {
+      return res.status(404).json({ error: "Child not found or not authorized to delete" });
+    }
+    
+    // Delete the participant
+    await participant.destroy({
+      where: {
+        participant_id: participant_id,
+        parent_id: parent.id
+      }
+    });
+    
+    res.json({
+      message: "Child deleted successfully",
+      deleted_participant_id: participant_id
+    });
+    
+  } catch (error) {
+    console.error("Error deleting participant:", error);
+    res.status(500).json({ error: "Failed to delete child" });
+  }
+});
+
 const emailer = (email, message) => {
   const msg = resend.emails.send({
     from: 'onboarding@resend.dev', // Change to your verified sender
