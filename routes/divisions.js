@@ -19,16 +19,156 @@ router.post('/', validateToken, async (req, res) => {
       res.json("Bracket Created");
     } catch (error) {
       console.error("Error creating division:", error);
-      res.status(500).json({ error: "Something went wrong while creating the division." });
+      
+      // Check for Sequelize unique constraint violations
+      if (error.name === 'SequelizeUniqueConstraintError' || 
+          error.name === 'SequelizeValidationError' ||
+          error.original?.code === 'ER_DUP_ENTRY' || // MySQL
+          error.original?.code === '23505' || // PostgreSQL
+          error.original?.code === 'SQLITE_CONSTRAINT') { // SQLite
+        res.status(400).json({ 
+          error: "A division with these exact details (age group, proficiency level, gender, and category) already exists for this tournament." 
+        });
+      } else {
+        res.status(500).json({ error: "Something went wrong while creating the division." });
+      }
     }
   });
+
+router.post('/bulk', validateToken, async (req, res) => {
+  try {
+    const { divisions, tournament_id } = req.body;
+    
+    // Validate input
+    if (!divisions || !Array.isArray(divisions) || divisions.length === 0) {
+      return res.status(400).json({ error: "Divisions array is required and cannot be empty" });
+    }
+    
+    if (!tournament_id) {
+      return res.status(400).json({ error: "Tournament ID is required" });
+    }
+
+    console.log(`Creating ${divisions.length} divisions for tournament ${tournament_id}`);
+    
+    // Validate each division has required fields
+    const requiredFields = ['age_group', 'proficiency_level', 'gender', 'category'];
+    for (let i = 0; i < divisions.length; i++) {
+      const division = divisions[i];
+      for (const field of requiredFields) {
+        if (!division[field] || division[field].trim() === '') {
+          return res.status(400).json({ 
+            error: `Missing required field '${field}' in division ${i + 1}` 
+          });
+        }
+      }
+      // Ensure tournament_id is set for each division
+      division.tournament_id = tournament_id;
+    }
+
+    // Import sequelize instance from models
+    const { sequelize } = require('../models');
+    const transaction = await sequelize.transaction();
+    
+    try {
+      // Check for existing divisions that would cause duplicates
+      const existingDivisions = await Divisions.findAll({
+        where: { tournament_id: tournament_id },
+        transaction
+      });
+      
+      const duplicates = [];
+      divisions.forEach((newDiv, index) => {
+        const duplicate = existingDivisions.find(existing => 
+          existing.age_group === newDiv.age_group &&
+          existing.proficiency_level === newDiv.proficiency_level &&
+          existing.gender === newDiv.gender &&
+          existing.category === newDiv.category
+        );
+        
+        if (duplicate) {
+          duplicates.push({
+            index: index + 1,
+            details: `${newDiv.age_group} ${newDiv.proficiency_level} ${newDiv.gender} ${newDiv.category}`
+          });
+        }
+      });
+      
+      if (duplicates.length > 0) {
+        await transaction.rollback();
+        return res.status(400).json({ 
+          error: "Duplicate divisions found",
+          duplicates: duplicates.map(dup => `Division ${dup.index}: ${dup.details}`)
+        });
+      }
+      
+      // Create all divisions in bulk
+      const createdDivisions = await Divisions.bulkCreate(divisions, {
+        transaction,
+        validate: true,
+        returning: true
+      });
+      
+      await transaction.commit();
+      
+      console.log(`Successfully created ${createdDivisions.length} divisions`);
+      res.json({
+        message: `Successfully created ${createdDivisions.length} divisions`,
+        count: createdDivisions.length,
+        divisions: createdDivisions
+      });
+      
+    } catch (transactionError) {
+      await transaction.rollback();
+      throw transactionError;
+    }
+    
+  } catch (error) {
+    console.error("Error creating bulk divisions:", error);
+    
+    // Check for Sequelize unique constraint violations
+    if (error.name === 'SequelizeUniqueConstraintError' || 
+        error.name === 'SequelizeValidationError' ||
+        error.original?.code === 'ER_DUP_ENTRY' || // MySQL
+        error.original?.code === '23505' || // PostgreSQL
+        error.original?.code === 'SQLITE_CONSTRAINT') { // SQLite
+      res.status(400).json({ 
+        error: "One or more divisions have conflicting details (age group, proficiency level, gender, and category) that already exist for this tournament." 
+      });
+    } else {
+      res.status(500).json({ 
+        error: "Something went wrong while creating divisions.",
+        details: error.message 
+      });
+    }
+  }
+});
 
   router.get('/',validateToken,async (req,res) =>{
     const { tournament_id } = req.query;
     const divisions = await Divisions.findAll({
         where: {tournament_id:tournament_id},
       });
-      res.json(divisions);
+      
+    // Sort divisions by age group in ascending order (youngest first)
+    const sortedDivisions = divisions.sort((a, b) => {
+      const rangeA = ageRange(a);
+      const rangeB = ageRange(b);
+      
+      // Sort by minimum age ascending (youngest divisions first)
+      if (rangeA[0] !== rangeB[0]) {
+        return rangeA[0] - rangeB[0]; // Ascending by min age
+      }
+      
+      // If same min age, sort by maximum age ascending
+      if (rangeA[1] !== rangeB[1]) {
+        return rangeA[1] - rangeB[1]; // Ascending by max age
+      }
+      
+      // If same age range, sort by proficiency level (beginner first for ascending)
+      return getProficiencyOrder(a.proficiency_level) - getProficiencyOrder(b.proficiency_level);
+    });
+    
+    res.json(sortedDivisions);
   });
 
 
@@ -315,11 +455,23 @@ router.get("/parentview", validateParent,async (req, res) => {
         res.status(200).json({ message: "Successfully updated" });
       } else {
         console.log("Not found");
-        res.status(404).json({ error: "Tournament not found" });
+        res.status(404).json({ error: "Division not found" });
       }
     } catch (error) {
-      console.error("Error updating tournament:", error);
-      res.status(500).json({ error: "Internal Server Error" });
+      console.error("Error updating division:", error);
+      
+      // Check for Sequelize unique constraint violations
+      if (error.name === 'SequelizeUniqueConstraintError' || 
+          error.name === 'SequelizeValidationError' ||
+          error.original?.code === 'ER_DUP_ENTRY' || // MySQL
+          error.original?.code === '23505' || // PostgreSQL
+          error.original?.code === 'SQLITE_CONSTRAINT') { // SQLite
+        res.status(400).json({ 
+          error: "A division with these exact details (age group, proficiency level, gender, and category) already exists for this tournament." 
+        });
+      } else {
+        res.status(500).json({ error: "Internal Server Error" });
+      }
     }
   });
 
@@ -818,6 +970,22 @@ function getProficiencyOrder(proficiency) {
     'advanced': 3,
     'Advanced': 3,
     'ADVANCED': 3
+  };
+  return order[proficiency] || 999; // Unknown proficiency levels go last
+}
+
+// Helper function to get proficiency level order for descending sort (advanced first)
+function getProficiencyOrderDescending(proficiency) {
+  const order = {
+    'advanced': 1,
+    'Advanced': 1,
+    'ADVANCED': 1,
+    'intermediate': 2,
+    'Intermediate': 2,
+    'INTERMEDIATE': 2,
+    'beginner': 3,
+    'Beginner': 3,
+    'BEGINNER': 3
   };
   return order[proficiency] || 999; // Unknown proficiency levels go last
 }
