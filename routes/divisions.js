@@ -3,7 +3,9 @@ const router = express.Router();
 const {Divisions} = require ("../models");
 const {participant} = require("../models");
 const {ParticipantDivision} = require("../models");
+const {tournaments} = require("../models");
 const {Mats} = require("../models");
+const {Parent} = require("../models");
 const { validateToken } = require("../middlewares/AuthMiddleware");
 const { validateParticipant } = require('../middlewares/validateParticipant')
 const {validateParent} = require("../middlewares/validateParent");
@@ -14,6 +16,14 @@ const { Sequelize } = require('sequelize');
 router.post('/', validateToken, async (req, res) => {
     try {
       const data = req.body;
+      const user_account_id = req.user.account_id;
+      
+      // Check if user owns the tournament
+      const authCheck = await checkTournamentOwnership(user_account_id, data.tournament_id);
+      if (!authCheck.authorized) {
+        return res.status(401).json({ error: authCheck.error });
+      }
+      
       console.log("Creating division with data:", data);
       const division = await Divisions.create(data);
       res.json("Bracket Created");
@@ -38,6 +48,7 @@ router.post('/', validateToken, async (req, res) => {
 router.post('/bulk', validateToken, async (req, res) => {
   try {
     const { divisions, tournament_id } = req.body;
+    const user_account_id = req.user.account_id;
     
     // Validate input
     if (!divisions || !Array.isArray(divisions) || divisions.length === 0) {
@@ -46,6 +57,12 @@ router.post('/bulk', validateToken, async (req, res) => {
     
     if (!tournament_id) {
       return res.status(400).json({ error: "Tournament ID is required" });
+    }
+
+    // Check if user owns the tournament
+    const authCheck = await checkTournamentOwnership(user_account_id, tournament_id);
+    if (!authCheck.authorized) {
+      return res.status(401).json({ error: authCheck.error });
     }
 
     console.log(`Creating ${divisions.length} divisions for tournament ${tournament_id}`);
@@ -145,6 +162,14 @@ router.post('/bulk', validateToken, async (req, res) => {
 
   router.get('/',validateToken,async (req,res) =>{
     const { tournament_id } = req.query;
+    const user_account_id = req.user.account_id;
+    
+    // Check if user owns the tournament
+    const authCheck = await checkTournamentOwnership(user_account_id, tournament_id);
+    if (!authCheck.authorized) {
+      return res.status(401).json({ error: authCheck.error });
+    }
+    
     const divisions = await Divisions.findAll({
         where: {tournament_id:tournament_id},
       });
@@ -202,19 +227,26 @@ router.post('/bulk', validateToken, async (req, res) => {
 router.get('/partview', validateParticipant, async (req, res) => {
   const participant_id = req.participant.participant_id;
   const { tournamentId } = req.query;
-   const participent = await participant.findOne({ where: { participant_id } });
-  let time = 0;
-  // make time a array to store time for each division
-  const email = participent.email;
+  
+  try {
+    // Check if participant has access to this tournament
+    const accessCheck = await checkParticipantAccess(participant_id, tournamentId);
+    if (!accessCheck.authorized) {
+      return res.status(401).json({ error: accessCheck.error });
+    }
+    
+    const participent = await participant.findOne({ where: { participant_id } });
+    let time = 0;
+    // make time a array to store time for each division
+    const email = participent.email;
 
     // Get all participant_ids with this email
     const participants = await participant.findAll({ where: { email } });
     const participantIds = participants.map(p => p.participant_id);
 
-  try {
-     const participantDivisions = await ParticipantDivision.findAll({
-          where: { participant_id: { [Op.in]: participantIds } },
-        });
+    const participantDivisions = await ParticipantDivision.findAll({
+      where: { participant_id: { [Op.in]: participantIds } },
+    });
 
     if (!participantDivisions || participantDivisions.length === 0) {
       return res.status(404).json({ error: "Participant not found in any division" });
@@ -222,10 +254,9 @@ router.get('/partview', validateParticipant, async (req, res) => {
 
     const divisionIds = participantDivisions.map(pd => pd.division_id);
 
-
-      const divisions = await Divisions.findAll({
-          where: { division_id: { [Op.in]: divisionIds }, tournament_id: tournamentId },
-        });
+    const divisions = await Divisions.findAll({
+      where: { division_id: { [Op.in]: divisionIds }, tournament_id: tournamentId },
+    });
     
     const allDivisions = await Divisions.findAll({
       where : {tournament_id: divisions[0].tournament_id},
@@ -315,17 +346,24 @@ router.get('/partview', validateParticipant, async (req, res) => {
   }
 });
 
-router.get("/parentview", validateParent,async (req, res) => {
-     const parent_id = req.parent.id;
-     const {tournamentId} = req.query;
-     const participants = await participant.findAll({ where: { parent_id } });
-     const participantIds = participants.map(p => p.participant_id);
-      let time = 0;
-
+router.get("/parentview", validateParent, async (req, res) => {
+  const parent_id = req.parent.id;
+  const { tournamentId } = req.query;
+  
   try {
-     const participantDivisions = await ParticipantDivision.findAll({
-          where: { participant_id: { [Op.in]: participantIds } },
-        });
+    // Check if parent has access to this tournament
+    const accessCheck = await checkParentAccess(parent_id, tournamentId);
+    if (!accessCheck.authorized) {
+      return res.status(401).json({ error: accessCheck.error });
+    }
+    
+    const participants = await participant.findAll({ where: { parent_id } });
+    const participantIds = participants.map(p => p.participant_id);
+    let time = 0;
+
+    const participantDivisions = await ParticipantDivision.findAll({
+      where: { participant_id: { [Op.in]: participantIds } },
+    });
 
     if (!participantDivisions || participantDivisions.length === 0) {
       return res.status(404).json({ error: "Participant not found in any division" });
@@ -333,10 +371,9 @@ router.get("/parentview", validateParent,async (req, res) => {
 
     const divisionIds = participantDivisions.map(pd => pd.division_id);
 
-
-      const divisions = await Divisions.findAll({
-          where: { division_id: { [Op.in]: divisionIds }, tournament_id: tournamentId },
-        });
+    const divisions = await Divisions.findAll({
+      where: { division_id: { [Op.in]: divisionIds }, tournament_id: tournamentId },
+    });
     
     const allDivisions = await Divisions.findAll({
       where : {tournament_id: divisions[0].tournament_id},
@@ -439,6 +476,14 @@ router.get("/parentview", validateParent,async (req, res) => {
   router.patch("/", validateToken, async (req, res) => {
     try {
       const data = req.body;
+      const user_account_id = req.user.account_id;
+      
+      // Check if user owns the tournament (using division_id to get tournament_id)
+      const authCheck = await checkTournamentOwnership(user_account_id, null, data.division_id);
+      if (!authCheck.authorized) {
+        return res.status(401).json({ error: authCheck.error });
+      }
+      
       const DivisionRes = await Divisions.findOne({ where: { division_id: data.division_id } });
       
       if (DivisionRes) {
@@ -476,8 +521,16 @@ router.get("/parentview", validateParent,async (req, res) => {
   });
 
   router.delete("/", validateToken, async (req, res) => {
-    const division_id = req.body.division_id; 
+    const division_id = req.body.division_id;
+    const user_account_id = req.user.account_id;
+    
     try {
+      // Check if user owns the tournament (using division_id to get tournament_id)
+      const authCheck = await checkTournamentOwnership(user_account_id, null, division_id);
+      if (!authCheck.authorized) {
+        return res.status(401).json({ error: authCheck.error });
+      }
+      
       const deletedDivision = await Divisions.destroy({
         where: {
           division_id: division_id
@@ -691,12 +744,19 @@ router.get("/parentview", validateParent,async (req, res) => {
 // Route to automatically assign divisions to mats
 router.post('/assign-mats', validateToken, async (req, res) => {
   const { tournament_id } = req.body;
+  const user_account_id = req.user.account_id;
 
   try {
     console.log('Assign mats request for tournament:', tournament_id);
     
     if (!tournament_id) {
       return res.status(400).json({ error: "Tournament ID is required" });
+    }
+
+    // Check if user owns the tournament
+    const authCheck = await checkTournamentOwnership(user_account_id, tournament_id);
+    if (!authCheck.authorized) {
+      return res.status(401).json({ error: authCheck.error });
     }
 
     // Get all divisions for the tournament in proper order
@@ -800,10 +860,17 @@ router.post('/assign-mats', validateToken, async (req, res) => {
 // Route to mark division as complete and trigger mat reassignment
 router.patch('/complete', validateToken, async (req, res) => {
   const { division_id } = req.body;
+  const user_account_id = req.user.account_id;
 
   try {
     if (!division_id) {
       return res.status(400).json({ error: "Division ID is required" });
+    }
+
+    // Check if user owns the tournament (using division_id to get tournament_id)
+    const authCheck = await checkTournamentOwnership(user_account_id, null, division_id);
+    if (!authCheck.authorized) {
+      return res.status(401).json({ error: authCheck.error });
     }
 
     // Get the completed division
@@ -1026,6 +1093,269 @@ function lowerAgeDivision(allDivisions) {
     }
   }
   return count;
+}
+
+async function checkParentAccess(parent_id, tournament_id, division_id = null) {
+  try {
+    console.log("=== checkParentAccess called ===");
+    console.log("parent_id:", parent_id);
+    console.log("tournament_id:", tournament_id);
+    console.log("division_id:", division_id);
+    
+    // Get the parent to verify they exist
+    const parentRecord = await Parent.findOne({
+      where: { parent_id: parent_id },
+      attributes: ['parent_id', 'email', 'name']
+    });
+    
+    console.log("Parent lookup result:", parentRecord);
+    
+    if (!parentRecord) {
+      console.log("Parent not found");
+      return { authorized: false, error: "Parent not found" };
+    }
+    
+    // Get all participants (children) for this parent
+    const participants = await participant.findAll({ 
+      where: { parent_id: parent_id },
+      attributes: ['participant_id', 'name', 'email']
+    });
+    
+    console.log("Parent's children found:", participants);
+    
+    if (!participants || participants.length === 0) {
+      console.log("Parent has no children registered");
+      return { authorized: false, error: "Parent has no children registered" };
+    }
+    
+    const participantIds = participants.map(p => p.participant_id);
+    console.log("Children participant IDs:", participantIds);
+    
+    // Get all divisions the children are enrolled in
+    const participantDivisions = await ParticipantDivision.findAll({
+      where: { participant_id: { [Op.in]: participantIds } },
+      attributes: ['division_id', 'participant_id']
+    });
+    
+    console.log("Children's divisions found:", participantDivisions);
+    
+    if (!participantDivisions || participantDivisions.length === 0) {
+      console.log("Parent's children not enrolled in any divisions");
+      return { authorized: false, error: "Parent's children not enrolled in any divisions" };
+    }
+    
+    const divisionIds = participantDivisions.map(pd => pd.division_id);
+    console.log("Division IDs children are enrolled in:", divisionIds);
+    
+    // If checking specific division access
+    if (division_id) {
+      if (!divisionIds.includes(division_id)) {
+        console.log("Parent's children not enrolled in specified division");
+        return { authorized: false, error: "Parent's children not enrolled in this division" };
+      }
+    }
+    
+    // Get divisions and check if they belong to the specified tournament
+    const divisions = await Divisions.findAll({
+      where: { 
+        division_id: { [Op.in]: divisionIds },
+        ...(tournament_id && { tournament_id: tournament_id })
+      },
+      attributes: ['division_id', 'tournament_id']
+    });
+    
+    console.log("Divisions in specified tournament:", divisions);
+    
+    if (!divisions || divisions.length === 0) {
+      console.log("Parent's children not enrolled in any divisions for this tournament");
+      return { authorized: false, error: "Parent's children not enrolled in any divisions for this tournament" };
+    }
+    
+    // Verify tournament access
+    const tournamentIds = [...new Set(divisions.map(d => d.tournament_id))];
+    
+    // Convert tournament_id to integer for comparison (query params are strings)
+    const tournamentIdInt = tournament_id ? parseInt(tournament_id) : null;
+    
+    if (tournamentIdInt && !tournamentIds.includes(tournamentIdInt)) {
+      console.log("Parent's children not enrolled in specified tournament");
+      console.log("Looking for tournament_id:", tournamentIdInt, "in tournamentIds:", tournamentIds);
+      return { authorized: false, error: "Parent's children not enrolled in this tournament" };
+    }
+    
+    console.log("Parent access authorized");
+    return { 
+      authorized: true, 
+      parent_id: parent_id,
+      children: participants,
+      enrolled_divisions: divisionIds,
+      tournament_ids: tournamentIds
+    };
+    
+  } catch (error) {
+    console.error("Error checking parent access:", error);
+    return { authorized: false, error: "Internal server error" };
+  }
+}
+
+async function checkParticipantAccess(participant_id, tournament_id, division_id = null) {
+  try {
+    console.log("=== checkParticipantAccess called ===");
+    console.log("participant_id:", participant_id);
+    console.log("tournament_id:", tournament_id);
+    console.log("division_id:", division_id);
+    
+    // Get the participant to verify they exist
+    const participantRecord = await participant.findOne({
+      where: { participant_id: participant_id },
+      attributes: ['participant_id', 'email']
+    });
+    
+    console.log("Participant lookup result:", participantRecord);
+    
+    if (!participantRecord) {
+      console.log("Participant not found");
+      return { authorized: false, error: "Participant not found" };
+    }
+    
+    // Get all participant_ids with the same email (for family accounts)
+    const participantRecords = await participant.findAll({ 
+      where: { email: participantRecord.email },
+      attributes: ['participant_id']
+    });
+    const participantIds = participantRecords.map(p => p.participant_id);
+    
+    console.log("All participant IDs with same email:", participantIds);
+    
+    // Get all divisions this participant (or family members) are enrolled in
+    const participantDivisions = await ParticipantDivision.findAll({
+      where: { participant_id: { [Op.in]: participantIds } },
+      attributes: ['division_id', 'participant_id']
+    });
+    
+    console.log("Participant divisions found:", participantDivisions);
+    
+    if (!participantDivisions || participantDivisions.length === 0) {
+      console.log("Participant not enrolled in any divisions");
+      return { authorized: false, error: "Participant not enrolled in any divisions" };
+    }
+    
+    const divisionIds = participantDivisions.map(pd => pd.division_id);
+    console.log("Division IDs participant is enrolled in:", divisionIds);
+    
+    // If checking specific division access
+    if (division_id) {
+      if (!divisionIds.includes(division_id)) {
+        console.log("Participant not enrolled in specified division");
+        return { authorized: false, error: "Participant not enrolled in this division" };
+      }
+    }
+    
+    // Get divisions and check if they belong to the specified tournament
+    const divisions = await Divisions.findAll({
+      where: { 
+        division_id: { [Op.in]: divisionIds },
+        ...(tournament_id && { tournament_id: tournament_id })
+      },
+      attributes: ['division_id', 'tournament_id']
+    });
+    
+    console.log("Divisions in specified tournament:", divisions);
+    
+    if (!divisions || divisions.length === 0) {
+      console.log("Participant not enrolled in any divisions for this tournament");
+      return { authorized: false, error: "Participant not enrolled in any divisions for this tournament" };
+    }
+    
+    // Verify tournament access
+    const tournamentIds = [...new Set(divisions.map(d => d.tournament_id))];
+    
+    // Convert tournament_id to integer for comparison (query params are strings)
+    const tournamentIdInt = tournament_id ? parseInt(tournament_id) : null;
+    
+    if (tournamentIdInt && !tournamentIds.includes(tournamentIdInt)) {
+      console.log("Participant not enrolled in specified tournament");
+      console.log("Looking for tournament_id:", tournamentIdInt, "in tournamentIds:", tournamentIds);
+      return { authorized: false, error: "Participant not enrolled in this tournament" };
+    }
+    
+    console.log("Participant access authorized");
+    return { 
+      authorized: true, 
+      participant_id: participant_id,
+      enrolled_divisions: divisionIds,
+      tournament_ids: tournamentIds
+    };
+    
+  } catch (error) {
+    console.error("Error checking participant access:", error);
+    return { authorized: false, error: "Internal server error" };
+  }
+}
+
+async function checkTournamentOwnership(user_account_id, tournament_id, division_id = null) {
+  try {
+    console.log("=== checkTournamentOwnership called ===");
+    console.log("user_account_id:", user_account_id);
+    console.log("tournament_id:", tournament_id);
+    console.log("division_id:", division_id);
+    
+    let tournamentIdToCheck = tournament_id;
+    
+    // If tournament_id is not provided but division_id is, get tournament_id from division
+    if (!tournamentIdToCheck && division_id) {
+      console.log("No tournament_id provided, looking up from division_id:", division_id);
+      
+      const division = await Divisions.findOne({
+        where: { division_id: division_id },
+        attributes: ['tournament_id']
+      });
+      
+      console.log("Division lookup result:", division);
+      
+      if (!division) {
+        console.log("Division not found");
+        return { authorized: false, error: "Division not found" };
+      }
+      
+      tournamentIdToCheck = division.tournament_id;
+      console.log("Found tournament_id from division:", tournamentIdToCheck);
+    }
+    
+    if (!tournamentIdToCheck) {
+      console.log("No tournament_id available");
+      return { authorized: false, error: "Tournament ID is required" };
+    }
+    
+    // Get tournament and check ownership
+    console.log("Looking up tournament with ID:", tournamentIdToCheck);
+    const tournament = await tournaments.findOne({
+      where: { tournament_id: tournamentIdToCheck },
+      attributes: ['account_id']
+    });
+    
+    console.log("Tournament lookup result:", tournament);
+    
+    if (!tournament) {
+      console.log("Tournament not found");
+      return { authorized: false, error: "Tournament not found" };
+    }
+    
+    console.log("Tournament account_id:", tournament.account_id);
+    console.log("User account_id:", user_account_id);
+    console.log("Account IDs match:", tournament.account_id === user_account_id);
+    
+    if (tournament.account_id !== user_account_id) {
+      console.log("Authorization failed: User doesn't own tournament");
+      return { authorized: false, error: "Unauthorized: You don't own this tournament" };
+    }
+    
+    console.log("Authorization successful");
+    return { authorized: true, tournament_id: tournamentIdToCheck };
+  } catch (error) {
+    console.error("Error checking tournament ownership:", error);
+    return { authorized: false, error: "Internal server error" };
+  }
 }
 
 module.exports = router;
