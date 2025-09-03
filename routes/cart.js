@@ -1,5 +1,5 @@
 const express = require("express");
-const { participant, ParticipantDivision, EmailVerification,cart, Divisions,tournaments,users } = require("../models");
+const { participant, ParticipantDivision, EmailVerification,cart, Divisions,tournaments,users,Parent } = require("../models");
 const router = express.Router();
 const { validateParticipant } = require('../middlewares/validateParticipant')
 const {validateParent} = require("../middlewares/validateParent");
@@ -15,22 +15,23 @@ router.post('/', validateParticipant, async (req, res) => {
     const { division_id, tournament_id, age_group, proficiency_level } = req.body;
     const participant_id = req.participant.participant_id;
 
-    // Validate division belongs to tournament
-    const divisionData = await Divisions.findOne({ 
-        where: { 
-            division_id: division_id,
-            tournament_id: tournament_id 
-        } 
-    });
+    try {
+        // Validate division belongs to tournament
+        const divisionData = await Divisions.findOne({ 
+            where: { 
+                division_id: division_id,
+                tournament_id: tournament_id 
+            } 
+        });
 
-    if (!divisionData) {
-        return res.status(404).json({ error: 'Division not found in this tournament' });
-    }
+        if (!divisionData) {
+            return res.status(404).json({ error: 'Division not found in this tournament' });
+        }
 
-    const participantData = await participant.findOne({ where: { participant_id: participant_id } });
-    const email = participantData.email;
-    const belt_color = participantData.belt_color;
-    const date_of_birth = participantData.date_of_birth;
+        const participantData = await participant.findOne({ where: { participant_id: participant_id } });
+        const email = participantData.email;
+        const belt_color = participantData.belt_color;
+        const date_of_birth = participantData.date_of_birth;
 
     // Your existing validations...
     if (!date_of_birth || !belt_color || !division_id || !age_group) {
@@ -75,11 +76,29 @@ router.post('/', validateParticipant, async (req, res) => {
     });
 
     res.status(201).json({ message: 'Participant added to cart', cartItem });
+    } catch (error) {
+        console.error("Error adding to cart:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
 })
 
 
 router.post("/parentAddToCart",validateParent, async (req, res) => {
   const { participant_id, division_id, tournament_id } = req.body;
+  const parent_id = req.parent.id;
+
+  try {
+    // Verify the participant belongs to this parent
+    const childParticipant = await participant.findOne({ 
+      where: { 
+        participant_id: participant_id,
+        parent_id: parent_id 
+      } 
+    });
+
+    if (!childParticipant) {
+      return res.status(403).json({ error: 'Participant does not belong to this parent' });
+    }
 
    const divisionData = await Divisions.findOne({ 
         where: { 
@@ -137,15 +156,20 @@ router.post("/parentAddToCart",validateParent, async (req, res) => {
     });
 
     res.status(201).json({ message: 'Participant added to cart', cartItem });
+  } catch (error) {
+    console.error("Error adding to parent cart:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
 })
 
 
 
 router.get('/', validateParticipant, async (req, res) => {
   const { tournament_id } = req.query;
-      console.log("Fetching cart items for tournament:", tournament_id);
-    const participant_id = req.participant.participant_id;
-    
+  console.log("Fetching cart items for tournament:", tournament_id);
+  const participant_id = req.participant.participant_id;
+  
+  try {
     // Only get cart items for THIS tournament
     const cartItems = await cart.findAll({ 
         where: { 
@@ -175,14 +199,20 @@ router.get('/', validateParticipant, async (req, res) => {
     });
     
     res.json({ divisions: cartItemsWithDivisions, tournament_id });
+  } catch (error) {
+    console.error("Error fetching cart items:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.get("/count", validateParent, async (req, res) => {
   const { tournament_id } = req.query;
   const parent_id = req.parent.id;
-  const participants = await participant.findAll({
-    where: { parent_id: parent_id }
-  });
+  
+  try {
+    const participants = await participant.findAll({
+      where: { parent_id: parent_id }
+    });
   
   let totalCount = 0;
   for (const participantData of participants) {
@@ -202,11 +232,17 @@ router.get("/count", validateParent, async (req, res) => {
     totalCount += count;
   }
   return res.json(totalCount);
+  } catch (error) {
+    console.error("Error fetching parent cart count:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.get("/counts", validateParticipant, async (req, res) => {
   const { tournament_id } = req.query;
   const participant_id = req.participant.participant_id;
+  
+  try {
     const count = await cart.count({
       where: {
         participant_id: participant_id,
@@ -220,7 +256,12 @@ router.get("/counts", validateParticipant, async (req, res) => {
         }
       ]
     });
-return res.json(count);
+    
+    return res.json(count);
+  } catch (error) {
+    console.error("Error fetching cart count:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.get("/parent",validateParent, async (req,res) => {
@@ -289,7 +330,7 @@ try {
 router.post("/create-checkout-session", validateParticipant,async (req, res) => {
   try {
     const { tournament_id } = req.body;
-     const participant_id = req.participant.participant_id;
+    const participant_id = req.participant.participant_id;
 
         // Get cart items for THIS tournament only
         const cartItems = await cart.findAll({
@@ -735,5 +776,203 @@ router.delete('/parent/:cart_id', validateParent, async (req, res) => {
     res.status(500).json({ error: 'Failed to remove item from cart' });
   }
 });
+
+async function checkParticipantAccess(participant_id, tournament_id, division_id = null) {
+  try {
+    console.log("=== checkParticipantAccess called ===");
+    console.log("participant_id:", participant_id);
+    console.log("tournament_id:", tournament_id);
+    console.log("division_id:", division_id);
+    
+    // Get the participant to verify they exist
+    const participantRecord = await participant.findOne({
+      where: { participant_id: participant_id },
+      attributes: ['participant_id', 'email']
+    });
+    
+    console.log("Participant lookup result:", participantRecord);
+    
+    if (!participantRecord) {
+      console.log("Participant not found");
+      return { authorized: false, error: "Participant not found" };
+    }
+    
+    // Get all participant_ids with the same email (for family accounts)
+    const participantRecords = await participant.findAll({ 
+      where: { email: participantRecord.email },
+      attributes: ['participant_id']
+    });
+    const participantIds = participantRecords.map(p => p.participant_id);
+    
+    console.log("All participant IDs with same email:", participantIds);
+    
+    // Get all divisions this participant (or family members) are enrolled in
+    const participantDivisions = await ParticipantDivision.findAll({
+      where: { participant_id: { [Op.in]: participantIds } },
+      attributes: ['division_id', 'participant_id']
+    });
+    
+    console.log("Participant divisions found:", participantDivisions);
+    
+    if (!participantDivisions || participantDivisions.length === 0) {
+      console.log("Participant not enrolled in any divisions");
+      return { authorized: false, error: "Participant not enrolled in any divisions" };
+    }
+    
+    const divisionIds = participantDivisions.map(pd => pd.division_id);
+    console.log("Division IDs participant is enrolled in:", divisionIds);
+    
+    // If checking specific division access
+    if (division_id) {
+      if (!divisionIds.includes(division_id)) {
+        console.log("Participant not enrolled in specified division");
+        return { authorized: false, error: "Participant not enrolled in this division" };
+      }
+    }
+    
+    // Get divisions and check if they belong to the specified tournament
+    // Convert tournament_id to integer for database query (query params are strings)
+    const tournamentIdInt = tournament_id ? parseInt(tournament_id) : null;
+    
+    const divisions = await Divisions.findAll({
+      where: { 
+        division_id: { [Op.in]: divisionIds },
+        ...(tournamentIdInt && { tournament_id: tournamentIdInt })
+      },
+      attributes: ['division_id', 'tournament_id']
+    });
+    
+    console.log("Divisions in specified tournament:", divisions);
+    
+    if (!divisions || divisions.length === 0) {
+      console.log("Participant not enrolled in any divisions for this tournament");
+      return { authorized: false, error: "Participant not enrolled in any divisions for this tournament" };
+    }
+    
+    // Verify tournament access
+    const tournamentIds = [...new Set(divisions.map(d => d.tournament_id))];
+    
+    if (tournamentIdInt && !tournamentIds.includes(tournamentIdInt)) {
+      console.log("Participant not enrolled in specified tournament");
+      console.log("Looking for tournament_id:", tournamentIdInt, "in tournamentIds:", tournamentIds);
+      return { authorized: false, error: "Participant not enrolled in this tournament" };
+    }
+    
+    console.log("Participant access authorized");
+    return { 
+      authorized: true, 
+      participant_id: participant_id,
+      enrolled_divisions: divisionIds,
+      tournament_ids: tournamentIds
+    };
+    
+  } catch (error) {
+    console.error("Error checking participant access:", error);
+    return { authorized: false, error: "Internal server error" };
+  }
+}
+
+async function checkParentAccess(parent_id, tournament_id, division_id = null) {
+  try {
+    console.log("=== checkParentAccess called ===");
+    console.log("parent_id:", parent_id);
+    console.log("tournament_id:", tournament_id);
+    console.log("division_id:", division_id);
+    
+    // Get the parent to verify they exist
+    const parentRecord = await Parent.findOne({
+      where: { parent_id: parent_id },
+      attributes: ['parent_id', 'email', 'name']
+    });
+    
+    console.log("Parent lookup result:", parentRecord);
+    
+    if (!parentRecord) {
+      console.log("Parent not found");
+      return { authorized: false, error: "Parent not found" };
+    }
+    
+    // Get all participants (children) for this parent
+    const participants = await participant.findAll({ 
+      where: { parent_id: parent_id },
+      attributes: ['participant_id', 'name', 'email']
+    });
+    
+    console.log("Parent's children found:", participants);
+    
+    if (!participants || participants.length === 0) {
+      console.log("Parent has no children registered");
+      return { authorized: false, error: "Parent has no children registered" };
+    }
+    
+    const participantIds = participants.map(p => p.participant_id);
+    console.log("Children participant IDs:", participantIds);
+    
+    // Get all divisions the children are enrolled in
+    const participantDivisions = await ParticipantDivision.findAll({
+      where: { participant_id: { [Op.in]: participantIds } },
+      attributes: ['division_id', 'participant_id']
+    });
+    
+    console.log("Children's divisions found:", participantDivisions);
+    
+    if (!participantDivisions || participantDivisions.length === 0) {
+      console.log("Parent's children not enrolled in any divisions");
+      return { authorized: false, error: "Parent's children not enrolled in any divisions" };
+    }
+    
+    const divisionIds = participantDivisions.map(pd => pd.division_id);
+    console.log("Division IDs children are enrolled in:", divisionIds);
+    
+    // If checking specific division access
+    if (division_id) {
+      if (!divisionIds.includes(division_id)) {
+        console.log("Parent's children not enrolled in specified division");
+        return { authorized: false, error: "Parent's children not enrolled in this division" };
+      }
+    }
+    
+    // Get divisions and check if they belong to the specified tournament
+    // Convert tournament_id to integer for database query (query params are strings)
+    const tournamentIdInt = tournament_id ? parseInt(tournament_id) : null;
+    
+    const divisions = await Divisions.findAll({
+      where: { 
+        division_id: { [Op.in]: divisionIds },
+        ...(tournamentIdInt && { tournament_id: tournamentIdInt })
+      },
+      attributes: ['division_id', 'tournament_id']
+    });
+    
+    console.log("Divisions in specified tournament:", divisions);
+    
+    if (!divisions || divisions.length === 0) {
+      console.log("Parent's children not enrolled in any divisions for this tournament");
+      return { authorized: false, error: "Parent's children not enrolled in any divisions for this tournament" };
+    }
+    
+    // Verify tournament access
+    const tournamentIds = [...new Set(divisions.map(d => d.tournament_id))];
+    
+    if (tournamentIdInt && !tournamentIds.includes(tournamentIdInt)) {
+      console.log("Parent's children not enrolled in specified tournament");
+      console.log("Looking for tournament_id:", tournamentIdInt, "in tournamentIds:", tournamentIds);
+      return { authorized: false, error: "Parent's children not enrolled in this tournament" };
+    }
+    
+    console.log("Parent access authorized");
+    return { 
+      authorized: true, 
+      parent_id: parent_id,
+      children: participants,
+      enrolled_divisions: divisionIds,
+      tournament_ids: tournamentIds
+    };
+    
+  } catch (error) {
+    console.error("Error checking parent access:", error);
+    return { authorized: false, error: "Internal server error" };
+  }
+}
 
 module.exports = router;

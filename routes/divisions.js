@@ -1327,10 +1327,17 @@ async function checkTournamentOwnership(user_account_id, tournament_id, division
       return { authorized: false, error: "Tournament ID is required" };
     }
     
+    // Convert to integer to ensure proper database lookup
+    const tournamentIdInt = parseInt(tournamentIdToCheck);
+    if (isNaN(tournamentIdInt)) {
+      console.log("Invalid tournament_id format:", tournamentIdToCheck);
+      return { authorized: false, error: "Invalid tournament ID format" };
+    }
+    
     // Get tournament and check ownership
-    console.log("Looking up tournament with ID:", tournamentIdToCheck);
+    console.log("Looking up tournament with ID:", tournamentIdInt);
     const tournament = await tournaments.findOne({
-      where: { tournament_id: tournamentIdToCheck },
+      where: { tournament_id: tournamentIdInt },
       attributes: ['account_id']
     });
     
@@ -1341,17 +1348,21 @@ async function checkTournamentOwnership(user_account_id, tournament_id, division
       return { authorized: false, error: "Tournament not found" };
     }
     
-    console.log("Tournament account_id:", tournament.account_id);
-    console.log("User account_id:", user_account_id);
-    console.log("Account IDs match:", tournament.account_id === user_account_id);
+    // Convert account IDs to integers for comparison
+    const tournamentAccountId = parseInt(tournament.account_id);
+    const userAccountId = parseInt(user_account_id);
     
-    if (tournament.account_id !== user_account_id) {
+    console.log("Tournament account_id:", tournamentAccountId);
+    console.log("User account_id:", userAccountId);
+    console.log("Account IDs match:", tournamentAccountId === userAccountId);
+    
+    if (tournamentAccountId !== userAccountId) {
       console.log("Authorization failed: User doesn't own tournament");
       return { authorized: false, error: "Unauthorized: You don't own this tournament" };
     }
     
     console.log("Authorization successful");
-    return { authorized: true, tournament_id: tournamentIdToCheck };
+    return { authorized: true, tournament_id: tournamentIdInt };
   } catch (error) {
     console.error("Error checking tournament ownership:", error);
     return { authorized: false, error: "Internal server error" };
