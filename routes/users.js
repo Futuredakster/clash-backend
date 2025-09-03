@@ -153,7 +153,7 @@ router.post("/verifyemail", async (req, res) => {
     })
     if(msg){
         console.log('Email sent')
-        res.json({token:verifyToken,user_id:sameEmail.user_id });
+        res.json({message: "Password recovery email sent successfully!", token:verifyToken,user_id:sameEmail.user_id });
       }
       else if(!msg){
         console.error(error)

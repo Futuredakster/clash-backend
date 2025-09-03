@@ -41,18 +41,18 @@ router.post('/', validateParticipant, async (req, res) => {
 
     if (!isAge(age_group, date_of_birth)) {
         console.log("❌ Age validation failed", { age_group, date_of_birth });
-        return res.json({ error: 'Wrong age' });
+        return res.status(400).json({ error: 'Wrong age' });
     }
 
     if (!canCompete(proficiency_level, belt_color)) {
         console.log("❌ Belt validation failed", { proficiency_level, belt_color });
-        return res.json({ error: "Wrong division level" });
+        return res.status(400).json({ error: "Wrong division level" });
     }
 
     const emailExists = await isEmailAlreadyInDivision(email, division_id);
     if (emailExists) {
         console.log("❌ Email already registered", { email, division_id });
-        return res.json({ error: "This email is already registered" });
+        return res.status(400).json({ error: "This email is already registered" });
     }
 
 
@@ -124,12 +124,12 @@ router.post("/parentAddToCart",validateParent, async (req, res) => {
 
     if (!isAge(age_group, date_of_birth)) {
         console.log("❌ Age validation failed", { age_group, date_of_birth });
-        return res.json({ error: 'Wrong age' });
+        return res.status(400).json({ error: 'Wrong age' });
     }
 
     if (!canCompete(proficiency_level, belt_color)) {
         console.log("❌ Belt validation failed", { proficiency_level, belt_color });
-        return res.json({ error: "Wrong division level" });
+        return res.status(400).json({ error: "Wrong division level" });
     }
 
     if(participantData.email === null && participantData.parent_id === null) {
