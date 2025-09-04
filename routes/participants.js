@@ -190,6 +190,33 @@ router.get('/All', async (req, res) => {
   }
 });
 
+router.get('/users', validateToken, async (req, res) => {
+  try {
+     const userObj = req.user;
+     const { search } = req.query;
+     
+     // Build where clause with search functionality
+     const whereClause = { account_id: userObj.account_id };
+     
+     if (search && search.trim()) {
+       whereClause[Op.or] = [
+         { name: { [Op.like]: `%${search.trim()}%` } },
+         { email: { [Op.like]: `%${search.trim()}%` } },
+         { belt_color: { [Op.like]: `%${search.trim()}%` } }
+       ];
+     }
+     
+     const participants = await participant.findAll({
+      where: whereClause,
+      order: [['created_at', 'DESC']] // Latest participants first
+    });
+    res.json(participants);
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+})
+
 
 router.get('/user', validateToken, async (req, res) => {
   const { division_id } = req.query;
@@ -345,6 +372,146 @@ router.put('/details', validateParticipant, async (req, res) => {
     res.status(500).json({ error: "Failed to update participant details" });
   }
 });
+
+router.post("/bulk", validateToken, async (req, res) => {
+   const participants = req.body.participants;
+   const userObj = req.user;
+   if (!Array.isArray(participants) || participants.length === 0) {
+     return res.status(400).json({ error: "Invalid participants data" });
+   }
+
+   if (!userObj || !userObj.account_id) {
+     return res.status(403).json({ error: "User not authorized" });
+   }
+   try{
+     for(const competitor of participants) {
+      if(await compareEmail(competitor.email)){
+        return res.status(400).json({ error: `Email ${competitor.email} is already in use` });
+      }
+       await participant.create({
+         ...competitor,
+         account_id: userObj.account_id
+       });
+     }
+     res.status(201).json({ message: "Participants created successfully" });
+   }catch(error){
+     console.error("Error creating participants:", error);
+     res.status(500).json({ error: "Failed to create participants" });
+   }
+});
+
+router.put("/:participant_id", validateToken, async (req, res) => {
+  try {
+    const { participant_id } = req.params;
+    const userObj = req.user;
+    const updateData = req.body;
+
+    // Find the participant and verify ownership
+    const existingParticipant = await participant.findOne({
+      where: { 
+        participant_id: participant_id,
+        account_id: userObj.account_id 
+      }
+    });
+
+    if (!existingParticipant) {
+      return res.status(404).json({ error: 'Participant not found or access denied' });
+    }
+
+    // Build update object with only provided fields (all optional)
+    const fieldsToUpdate = {};
+    
+    if (updateData.name !== undefined && updateData.name.trim() !== '') {
+      fieldsToUpdate.name = updateData.name.trim();
+    }
+    
+    if (updateData.email !== undefined && updateData.email.trim() !== '') {
+      const trimmedEmail = updateData.email.trim();
+      
+      // Check if email is being changed and if new email already exists
+      if (trimmedEmail !== existingParticipant.email) {
+        const emailExists = await participant.findOne({
+          where: { 
+            email: trimmedEmail,
+            participant_id: { [Op.ne]: participant_id } // Exclude current participant
+          }
+        });
+        
+        if (emailExists) {
+          return res.status(400).json({ error: 'Email address is already in use by another participant' });
+        }
+      }
+      
+      fieldsToUpdate.email = trimmedEmail;
+    }
+    
+    if (updateData.date_of_birth !== undefined && updateData.date_of_birth !== '') {
+      fieldsToUpdate.date_of_birth = updateData.date_of_birth;
+    }
+    
+    if (updateData.belt_color !== undefined && updateData.belt_color !== '') {
+      fieldsToUpdate.belt_color = updateData.belt_color;
+    }
+
+    // Only update if there's something to update
+    if (Object.keys(fieldsToUpdate).length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    // Update the participant
+    await existingParticipant.update(fieldsToUpdate);
+
+    res.json({
+      message: 'Participant updated successfully',
+      participant: {
+        participant_id: existingParticipant.participant_id,
+        name: existingParticipant.name,
+        email: existingParticipant.email,
+        date_of_birth: existingParticipant.date_of_birth,
+        belt_color: existingParticipant.belt_color
+      }
+    });
+
+  } catch (error) {
+    console.error('Error updating participant:', error);
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(400).json({ error: 'Email address is already in use' });
+    }
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.delete("/:participant_id", validateToken, async (req, res) => {
+  try {
+    const { participant_id } = req.params;
+    const userObj = req.user;
+
+    // Find the participant and verify ownership
+    const existingParticipant = await participant.findOne({
+      where: { 
+        participant_id: participant_id,
+        account_id: userObj.account_id 
+      }
+    });
+
+    if (!existingParticipant) {
+      return res.status(404).json({ error: 'Participant not found or access denied' });
+    }
+
+    // Delete the participant
+    await existingParticipant.destroy();
+
+    res.json({
+      message: 'Participant deleted successfully',
+      participant_id: participant_id
+    });
+
+  } catch (error) {
+    console.error('Error deleting participant:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
   
 // Email function -----------------------------------------------------------------------------------------------------------------------------------
 const emailer = (email, message) => {

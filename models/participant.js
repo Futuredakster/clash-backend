@@ -28,6 +28,14 @@ module.exports = function(sequelize, DataTypes) {
         key: 'parent_id'
       }
     },
+    account_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'users',
+        key: 'account_id'
+      }
+    },
     email: {
       type: DataTypes.STRING(255),
       allowNull: true
@@ -87,6 +95,13 @@ module.exports = function(sequelize, DataTypes) {
     participant.belongsTo(models.Parent, {
       foreignKey: 'parent_id',
       as: 'parent'
+    });
+    
+    // Participant belongs to Account (optional)
+    participant.belongsTo(models.users, {
+      foreignKey: 'account_id',
+      targetKey: 'account_id',
+      as: 'account'
     });
   };
 
