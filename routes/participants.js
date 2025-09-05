@@ -521,7 +521,7 @@ router.delete("/:participant_id", validateToken, async (req, res) => {
   try {
     const { participant_id } = req.params;
     const userObj = req.user;
-
+ 
     // Find the participant and verify ownership
     const existingParticipant = await participant.findOne({
       where: { 
@@ -536,6 +536,46 @@ router.delete("/:participant_id", validateToken, async (req, res) => {
 
     // Delete the participant
     await existingParticipant.destroy();
+
+    res.json({
+      message: 'Participant deleted successfully',
+      participant_id: participant_id
+    });
+
+  } catch (error) {
+    console.error('Error deleting participant:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
+router.delete("/delete/:participant_id", validateToken, async (req, res) => {
+  try {
+    const { participant_id } = req.params;
+    const userObj = req.user;
+      // Log the received participant_id
+    // Find the participant and verify ownership
+    const existingParticipant = await participant.findOne({
+      where: { 
+        participant_id: participant_id,
+      }
+    });
+
+    if (!existingParticipant) {
+      return res.status(404).json({ error: 'Participant not found or access denied' });
+    }
+
+    // First, check if participant is in any divisions and remove them
+    const participantDivisions = await ParticipantDivision.findAll({
+      where: { participant_id: participant_id }
+    });
+
+    if (participantDivisions.length > 0) {
+      await ParticipantDivision.destroy({
+        where: { participant_id: participant_id }
+      });
+    }
+
 
     res.json({
       message: 'Participant deleted successfully',

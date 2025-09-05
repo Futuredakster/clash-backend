@@ -1393,5 +1393,152 @@ async function checkTournamentOwnership(user_account_id, tournament_id, division
   }
 }
 
+// Helper functions for validation
+function canCompete(level, userBelt) {
+  const beginnerBelts = ["white", "yellow"];
+  const intermediateBelts = ["orange", "green"];
+  const advancedBelts = ["purple", "brown", "black"];
+
+  level = level.toLowerCase();
+  userBelt = userBelt.toLowerCase();
+
+  if (level === "begginer") {
+    return beginnerBelts.includes(userBelt);
+  } else if (level === "intermediate") {
+    return intermediateBelts.includes(userBelt) || beginnerBelts.includes(userBelt);
+  } else if (level === "advanced") {
+    return advancedBelts.includes(userBelt) || intermediateBelts.includes(userBelt) || beginnerBelts.includes(userBelt);
+  }
+  return false;
+}
+
+function isAge(age_group, date_of_birth) {
+  const [minAge, maxAge] = age_group.split('-').map(Number);
+  const [year, month, day] = date_of_birth.split('-').map(Number);
+  const birthDate = new Date(year, month - 1, day);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDifference = today.getMonth() - birthDate.getMonth();
+  const dayDifference = today.getDate() - birthDate.getDate();
+
+  if (monthDifference < 0 || (monthDifference === 0 && dayDifference < 0)) {
+    age--;
+  }
+
+  if (age < minAge || age > maxAge) {
+    return false;
+  }
+  return true;
+}
+
+// Add competitors to division
+router.post('/:divisionId/competitors', validateToken, async (req, res) => {
+  try {
+    console.log('=== ADD COMPETITORS ENDPOINT CALLED ===');
+    const { divisionId } = req.params;
+    const { competitors } = req.body; // Array of participant_ids
+    console.log('Division ID:', divisionId);
+    console.log('Competitors:', competitors);
+    const user_account_id = req.user.account_id;
+    console.log('User account ID:', user_account_id);
+
+    // Verify division exists
+    const division = await Divisions.findOne({
+      where: { division_id: divisionId }
+    });
+
+    if (!division) {
+      return res.status(404).json({ error: "Division not found" });
+    }
+
+    // Verify user owns the tournament
+    const tournament = await tournaments.findOne({
+      where: { 
+        tournament_id: division.tournament_id,
+        account_id: user_account_id 
+      }
+    });
+
+    if (!tournament) {
+      return res.status(403).json({ error: "Access denied - you don't own this tournament" });
+    }
+
+    // First, filter out competitors already in this division
+    const existingParticipants = await ParticipantDivision.findAll({
+      where: { 
+        division_id: divisionId,
+        participant_id: competitors 
+      }
+    });
+
+    const existingParticipantIds = existingParticipants.map(p => p.participant_id);
+    const newCompetitors = competitors.filter(id => !existingParticipantIds.includes(id));
+
+    // Only validate NEW competitors that are being added
+    if (newCompetitors.length > 0) {
+      const competitorDetails = await participant.findAll({
+        where: { 
+          participant_id: newCompetitors,
+          account_id: user_account_id 
+        }
+      });
+
+      if (competitorDetails.length !== newCompetitors.length) {
+        return res.status(403).json({ error: "One or more new competitors don't belong to your account" });
+      }
+
+      // Validate each NEW participant against division requirements
+      const validationErrors = [];
+      for (const competitor of competitorDetails) {
+        const { name, date_of_birth, belt_color, participant_id } = competitor;
+        
+        // Check required fields
+        if (!name || !date_of_birth || !belt_color) {
+          validationErrors.push(`Participant ${name || participant_id}: Missing required fields`);
+          continue;
+        }
+        
+        // Check age compatibility
+        if (!isAge(division.age_group, date_of_birth)) {
+          validationErrors.push(`Participant ${name}: Age doesn't match division age group (${division.age_group})`);
+        }
+        
+        // Check belt/proficiency compatibility
+        if (!canCompete(division.proficiency_level, belt_color)) {
+          validationErrors.push(`Participant ${name}: Belt color (${belt_color}) doesn't match division level (${division.proficiency_level})`);
+        }
+      }
+
+      // If there are validation errors, return them
+      if (validationErrors.length > 0) {
+        return res.status(400).json({ 
+          error: "Validation failed for some participants",
+          details: validationErrors
+        });
+      }
+    }
+
+    // Add only new participants to the division
+    if (newCompetitors.length > 0) {
+      const participantDivisions = newCompetitors.map(participantId => ({
+        participant_id: participantId,
+        division_id: divisionId
+      }));
+
+      await ParticipantDivision.bulkCreate(participantDivisions);
+    }
+
+    res.json({ 
+      message: "Competitors added successfully",
+      added: newCompetitors.length,
+      skipped: competitors.length - newCompetitors.length
+    });
+
+  } catch (error) {
+    console.error('Error adding competitors to division:', error);
+    res.status(500).json({ error: "Failed to add competitors to division" });
+  }
+});
+
 module.exports = router;
 module.exports.reassignMatToNextDivision = reassignMatToNextDivision;
