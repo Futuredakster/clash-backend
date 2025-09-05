@@ -236,7 +236,32 @@ router.get('/user', validateToken, async (req, res) => {
       }
     });
 
-    res.json(participants);
+    // Also fetch division information
+    const { Divisions, tournaments } = require('../models');
+    const division = await Divisions.findOne({
+      where: { division_id }
+    });
+
+    let tournamentInfo = null;
+    if (division && division.tournament_id) {
+      tournamentInfo = await tournaments.findOne({
+        where: { tournament_id: division.tournament_id },
+        attributes: ['tournament_name', 'tournament_id']
+      });
+    }
+
+    res.json({
+      participants,
+      division: division ? {
+        division_id: division.division_id,
+        division_name: division.division_name,
+        age_group: division.age_group,
+        proficiency_level: division.proficiency_level,
+        gender: division.gender,
+        category: division.category,
+        tournament: tournamentInfo
+      } : null
+    });
   } catch (error) {
     console.error('Error fetching participants:', error);
     res.status(500).json({ error: 'Internal server error' });
