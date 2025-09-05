@@ -161,7 +161,7 @@ router.post('/bulk', validateToken, async (req, res) => {
 });
 
   router.get('/',validateToken,async (req,res) =>{
-    const { tournament_id } = req.query;
+    const { tournament_id, search } = req.query;
     const user_account_id = req.user.account_id;
     
     // Check if user owns the tournament
@@ -170,8 +170,20 @@ router.post('/bulk', validateToken, async (req, res) => {
       return res.status(401).json({ error: authCheck.error });
     }
     
+    // Build where clause with search functionality
+    const whereClause = { tournament_id: tournament_id };
+    
+    if (search && search.trim()) {
+      whereClause[Op.or] = [
+        { age_group: { [Op.like]: `%${search.trim()}%` } },
+        { proficiency_level: { [Op.like]: `%${search.trim()}%` } },
+        { gender: { [Op.like]: `%${search.trim()}%` } },
+        { category: { [Op.like]: `%${search.trim()}%` } }
+      ];
+    }
+    
     const divisions = await Divisions.findAll({
-        where: {tournament_id:tournament_id},
+        where: whereClause,
       });
       
     // Sort divisions by age group in ascending order (youngest first)
@@ -198,11 +210,23 @@ router.post('/bulk', validateToken, async (req, res) => {
 
 
   router.get('/praticepent', async (req, res) => {
-    const { tournament_id } = req.query;
+    const { tournament_id, search } = req.query;
   
     try {
+      // Build where clause with search functionality
+      const whereClause = { tournament_id };
+      
+      if (search && search.trim()) {
+        whereClause[Op.or] = [
+          { age_group: { [Op.like]: `%${search.trim()}%` } },
+          { proficiency_level: { [Op.like]: `%${search.trim()}%` } },
+          { gender: { [Op.like]: `%${search.trim()}%` } },
+          { category: { [Op.like]: `%${search.trim()}%` } }
+        ];
+      }
+
       const divisions = await Divisions.findAll({
-        where: { tournament_id },
+        where: whereClause,
         attributes: {
           include: [
             [Sequelize.fn('COUNT', Sequelize.col('participant_id')), 'participant_count']

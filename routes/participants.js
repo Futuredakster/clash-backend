@@ -136,7 +136,7 @@ router.post('/code', async (req, res) => {
 // modifications: added name field to the token being created
 
 router.get('/', async (req, res) => {
-  const { division_id } = req.query;
+  const { division_id, search } = req.query;
   try {
     const participantIds = await ParticipantDivision.findAll({
       where: {
@@ -147,11 +147,17 @@ router.get('/', async (req, res) => {
     });
 
     const ids = participantIds.map(pd => pd.participant_id);
+
+    // Build where clause with search functionality
+    const whereClause = { participant_id: ids };
+    
+    if (search && search.trim()) {
+      whereClause.name = { [Op.like]: `%${search.trim()}%` };
+    }
+
   // Filters it so you only get the values of the ids
     const participants = await participant.findAll({
-      where: {
-        participant_id: ids
-      },
+      where: whereClause,
       attributes: ['name']
     });
 
@@ -219,7 +225,7 @@ router.get('/users', validateToken, async (req, res) => {
 
 
 router.get('/user', validateToken, async (req, res) => {
-  const { division_id } = req.query;
+  const { division_id, search } = req.query;
   try {
     const participantIds = await ParticipantDivision.findAll({
       where: {
@@ -230,10 +236,15 @@ router.get('/user', validateToken, async (req, res) => {
 
     const ids = participantIds.map(pd => pd.participant_id);
 
+    // Build where clause with search functionality
+    const whereClause = { participant_id: ids };
+    
+    if (search && search.trim()) {
+      whereClause.name = { [Op.like]: `%${search.trim()}%` };
+    }
+
     const participants = await participant.findAll({
-      where: {
-        participant_id: ids
-      }
+      where: whereClause
     });
 
     // Also fetch division information
