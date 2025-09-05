@@ -547,27 +547,43 @@ router.get("/parentview", validateParent, async (req, res) => {
   router.delete("/", validateToken, async (req, res) => {
     const division_id = req.body.division_id;
     const user_account_id = req.user.account_id;
-    
+  // Log the received division_id
     try {
       // Check if user owns the tournament (using division_id to get tournament_id)
       const authCheck = await checkTournamentOwnership(user_account_id, null, division_id);
       if (!authCheck.authorized) {
         return res.status(401).json({ error: authCheck.error });
       }
+
+      // First delete brackets associated with this division
+      const {brackets} = require("../models");
+      await brackets.destroy({
+        where: {
+          division_id: division_id
+        }
+      });
+
+      // Then delete participant-division associations
+      await ParticipantDivision.destroy({
+        where: {
+          division_id: division_id
+        }
+      });
       
+      // Finally delete the division
       const deletedDivision = await Divisions.destroy({
         where: {
           division_id: division_id
         }
       });
-  
+
       if (deletedDivision > 0) {
-        res.status(200).json({ message: 'Tournament deleted successfully.' });
+        res.status(200).json({ message: 'Division deleted successfully.' });
       } else {
-        res.status(404).json({ message: 'Tournament not found or not deleted.' });
+        res.status(404).json({ message: 'Division not found or not deleted.' });
       }
     } catch (error) {
-      console.error('Error occurred while deleting tournament:', error);
+      console.error('Error occurred while deleting division:', error);
       res.status(500).json({ message: 'Internal server error.' });
     }
   });
