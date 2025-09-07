@@ -50,6 +50,9 @@ app.use("/cart", cartRouter);
 const matsRouter = require("./routes/mats");
 app.use("/mats", matsRouter);
 
+const demoRouter = require("./routes/demo");
+app.use("/demo", demoRouter);
+
 setupSocket(io);
 
 
