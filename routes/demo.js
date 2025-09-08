@@ -56,7 +56,7 @@ router.post("/", async (req, res) => {
         transaction
       });
       
-      // 4. Delete divisions
+      // 4. Delete brackets first (before divisions due to foreign key)
       const existingTournaments = await tournaments.findAll({
         where: { account_id: existingAccountId },
         transaction
@@ -64,10 +64,29 @@ router.post("/", async (req, res) => {
       
       if (existingTournaments.length > 0) {
         const tournamentIds = existingTournaments.map(t => t.tournament_id);
-        await Divisions.destroy({
+        
+        // Get division IDs first
+        const existingDivisions = await Divisions.findAll({
           where: { tournament_id: tournamentIds },
           transaction
         });
+        
+        if (existingDivisions.length > 0) {
+          const divisionIds = existingDivisions.map(d => d.division_id);
+          
+          // Delete brackets first
+          const { brackets } = require("../models");
+          await brackets.destroy({
+            where: { division_id: divisionIds },
+            transaction
+          });
+          
+          // Now delete divisions
+          await Divisions.destroy({
+            where: { tournament_id: tournamentIds },
+            transaction
+          });
+        }
       }
       
       // 5. Delete tournaments
