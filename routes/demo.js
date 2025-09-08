@@ -258,24 +258,9 @@ router.post("/", async (req, res) => {
     
     console.log(`Created ${createdParticipants.length} participants`);
     
-    // 7. Register Participants to Compatible Divisions
-    const registrations = [];
-    
-    // Helper function to check if participant can compete in division
+    // 7. Register Participants to Compatible Divisions - Simplified approach
+    // Helper function to check belt/proficiency compatibility
     const canParticipantCompete = (participant, division) => {
-      // Check age compatibility
-      const [minAge, maxAge] = division.age_group.split('-').map(Number);
-      const birthDate = new Date(participant.date_of_birth);
-      const today = new Date();
-      let age = today.getFullYear() - birthDate.getFullYear();
-      const monthDifference = today.getMonth() - birthDate.getMonth();
-      if (monthDifference < 0 || (monthDifference === 0 && today.getDate() < birthDate.getDate())) {
-        age--;
-      }
-      
-      if (age < minAge || age > maxAge) return false;
-      
-      // Check belt/proficiency compatibility  
       const beginnerBelts = ["white", "yellow"];
       const intermediateBelts = ["orange", "green"];
       const advancedBelts = ["purple", "brown", "black"];
@@ -293,25 +278,28 @@ router.post("/", async (req, res) => {
       
       return false;
     };
+
+    const registrations = [];
     
-    // Register participants to first tournament only (to keep demo manageable)
-    const firstTournament = createdTournaments[0];
-    const firstTournamentDivisions = createdDivisions.filter(d => d.tournament_id === firstTournament.tournament_id);
-    
-    for (const participant of createdParticipants) {
-      // Find compatible divisions for this participant
-      const compatibleDivisions = firstTournamentDivisions.filter(division => 
-        canParticipantCompete(participant, division)
-      );
+    // Register participants to both tournaments
+    for (const tournament of createdTournaments) {
+      const tournamentDivisions = createdDivisions.filter(d => d.tournament_id === tournament.tournament_id);
       
-      // Register to 1-2 compatible divisions (kata and/or kumite)
-      const selectedDivisions = compatibleDivisions.slice(0, Math.floor(Math.random() * 2) + 1);
-      
-      for (const division of selectedDivisions) {
-        registrations.push({
-          participant_id: participant.participant_id,
-          division_id: division.division_id
-        });
+      for (const participant of createdParticipants) {
+        // Find compatible divisions for this participant
+        const compatibleDivisions = tournamentDivisions.filter(division => 
+          canParticipantCompete(participant, division)
+        );
+        
+        // Register to 1-2 compatible divisions (kata and/or kumite)
+        const selectedDivisions = compatibleDivisions.slice(0, Math.floor(Math.random() * 2) + 1);
+        
+        for (const division of selectedDivisions) {
+          registrations.push({
+            participant_id: participant.participant_id,
+            division_id: division.division_id
+          });
+        }
       }
     }
     
