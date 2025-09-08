@@ -33,30 +33,7 @@ router.post("/", async (req, res) => {
       
       // Delete in reverse order of dependencies
       
-      // 1. Delete ParticipantDivision records
-      await ParticipantDivision.destroy({
-        where: {},
-        transaction
-      });
-      
-      // 2. Delete participants (both children and adults)
-      await participant.destroy({
-        where: {
-          [sequelize.Sequelize.Op.or]: [
-            { account_id: existingAccountId },
-            { email: { [sequelize.Sequelize.Op.like]: '%@email.com' } }
-          ]
-        },
-        transaction
-      });
-      
-      // 3. Delete parents
-      await Parent.destroy({
-        where: { email: { [sequelize.Sequelize.Op.like]: '%@email.com' } },
-        transaction
-      });
-      
-      // 4. Delete brackets first (before divisions due to foreign key)
+      // 1. Delete brackets first (they reference participants)
       const existingTournaments = await tournaments.findAll({
         where: { account_id: existingAccountId },
         transaction
@@ -74,19 +51,46 @@ router.post("/", async (req, res) => {
         if (existingDivisions.length > 0) {
           const divisionIds = existingDivisions.map(d => d.division_id);
           
-          // Delete brackets first
+          // Delete brackets first (they reference participants via foreign keys)
           const { brackets } = require("../models");
           await brackets.destroy({
             where: { division_id: divisionIds },
             transaction
           });
-          
-          // Now delete divisions
-          await Divisions.destroy({
-            where: { tournament_id: tournamentIds },
-            transaction
-          });
         }
+      }
+      
+      // 2. Delete ParticipantDivision records
+      await ParticipantDivision.destroy({
+        where: {},
+        transaction
+      });
+      
+      // 3. Delete participants (both children and adults)
+      await participant.destroy({
+        where: {
+          [sequelize.Sequelize.Op.or]: [
+            { account_id: existingAccountId },
+            { email: { [sequelize.Sequelize.Op.like]: '%@email.com' } }
+          ]
+        },
+        transaction
+      });
+      
+      // 4. Delete parents
+      await Parent.destroy({
+        where: { email: { [sequelize.Sequelize.Op.like]: '%@email.com' } },
+        transaction
+      });
+      
+      // 5. Delete divisions (now safe after brackets are deleted)
+      if (existingTournaments.length > 0) {
+        const tournamentIds = existingTournaments.map(t => t.tournament_id);
+        
+        await Divisions.destroy({
+          where: { tournament_id: tournamentIds },
+          transaction
+        });
       }
       
       // 5. Delete tournaments
