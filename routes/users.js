@@ -226,7 +226,7 @@ router.get("/status",validateToken, async (req,res) => {
       user_id:data.user_id
     }
   })
-  if(user.stripe_account){
+  if(user && user.stripe_account){
     res.json({message:true})
   }else{
     res.json({message:false})
