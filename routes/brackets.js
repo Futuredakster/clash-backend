@@ -476,6 +476,9 @@ router.get('/tournament-status/:tournament_id', async (req, res) => {
 router.post('/initial', async (req, res) => {
   const { tournament_id } = req.body;
   
+  console.log('=== Tournament Initialization Request ===');
+  console.log('Tournament ID:', tournament_id);
+  
   try {
     // Get all division IDs for this tournament
     const divisions = await Divisions.findAll({
@@ -483,7 +486,10 @@ router.post('/initial', async (req, res) => {
       attributes: ['division_id']
     });
 
+    console.log('Divisions found:', divisions.length);
+    
     if (divisions.length === 0) {
+      console.log('ERROR: No divisions found for tournament', tournament_id);
       return res.status(400).json({ 
         error: "No divisions found for this tournament" 
       });
@@ -498,7 +504,10 @@ router.post('/initial', async (req, res) => {
       }
     });
 
+    console.log('Existing brackets check:', existingBrackets ? 'FOUND' : 'NONE');
+    
     if (existingBrackets) {
+      console.log('ERROR: Brackets already exist for tournament', tournament_id);
       return res.status(400).json({ 
         error: "Brackets have already been created for this tournament" 
       });

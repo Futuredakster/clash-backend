@@ -1,7 +1,7 @@
 const express = require("express");
 const multer = require("multer");
 const router = express.Router();
-const { tournaments ,Divisions,ParticipantDivision,participant  } = require("../models");
+const { tournaments ,Divisions,ParticipantDivision,participant, brackets, Mats  } = require("../models");
 const { validateToken } = require("../middlewares/AuthMiddleware");
 const { Op } = require("sequelize");
 const { cloudinary, storage } = require("../utils/cloudinary");
@@ -359,6 +359,48 @@ router.delete("/", validateToken, async (req, res) => {
   const tournament_id = req.body.tournament_id;
 
   try {
+    // Verify tournament ownership first
+    const tournament = await tournaments.findOne({
+      where: {
+        account_id: account_id,
+        tournament_id: tournament_id,
+      },
+    });
+
+    if (!tournament) {
+      return res.status(404).json({ message: "Tournament not found." });
+    }
+
+    // Get all divisions for this tournament
+    const divisionsInTournament = await Divisions.findAll({
+      where: { tournament_id: tournament_id }
+    });
+
+    const divisionIds = divisionsInTournament.map(div => div.division_id);
+
+    if (divisionIds.length > 0) {
+      // 1. Delete participant_division records first
+      await ParticipantDivision.destroy({
+        where: { division_id: { [Op.in]: divisionIds } }
+      });
+
+      // 2. Delete brackets records for these divisions
+      await brackets.destroy({
+        where: { division_id: { [Op.in]: divisionIds } }
+      });
+
+      // 3. Delete divisions
+      await Divisions.destroy({
+        where: { tournament_id: tournament_id }
+      });
+    }
+
+    // 4. Delete mats for this tournament
+    await Mats.destroy({
+      where: { tournament_id: tournament_id }
+    });
+
+    // 5. Finally delete the tournament
     const deletedTournament = await tournaments.destroy({
       where: {
         account_id: account_id,
@@ -367,7 +409,7 @@ router.delete("/", validateToken, async (req, res) => {
     });
 
     if (deletedTournament > 0) {
-      res.status(200).json({ message: "Tournament deleted successfully." });
+      res.status(200).json({ message: "Tournament and all related data deleted successfully." });
     } else {
       res.status(404).json({ message: "Tournament not found or not deleted." });
     }
