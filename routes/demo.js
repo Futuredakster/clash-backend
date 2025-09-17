@@ -168,21 +168,32 @@ router.post("/", async (req, res) => {
     // 4. Create Divisions for each Tournament
     const divisionTemplates = [
       // Kids divisions - unique combinations of age_group + proficiency_level
-      { age_group: "6-8", proficiency_level: "beginner", gender: "Mixed", category: "Kata", cost: 2500, time: 45 },
-      { age_group: "9-11", proficiency_level: "beginner", gender: "Mixed", category: "Kata", cost: 2500, time: 45 },
-      { age_group: "9-11", proficiency_level: "intermediate", gender: "Mixed", category: "Kata", cost: 3000, time: 50 },
-      
+      { age_group: "6-8", proficiency_level: "beginner", gender: "Male", category: "Kata", cost: 2500, time: 45 },
+      { age_group: "6-8", proficiency_level: "beginner", gender: "Female", category: "Kata", cost: 2500, time: 45 },
+      { age_group: "9-11", proficiency_level: "beginner", gender: "Male", category: "Kata", cost: 2500, time: 45 },
+      { age_group: "9-11", proficiency_level: "beginner", gender: "Female", category: "Kata", cost: 2500, time: 45 },
+      { age_group: "9-11", proficiency_level: "intermediate", gender: "Male", category: "Kata", cost: 3000, time: 50 },
+      { age_group: "9-11", proficiency_level: "intermediate", gender: "Female", category: "Kata", cost: 3000, time: 50 },
+
       // Teen divisions
-      { age_group: "12-14", proficiency_level: "beginner", gender: "Mixed", category: "Kata", cost: 3000, time: 50 },
-      { age_group: "12-14", proficiency_level: "intermediate", gender: "Mixed", category: "Kumite", cost: 3500, time: 80 },
-      { age_group: "15-17", proficiency_level: "intermediate", gender: "Mixed", category: "Kata", cost: 3500, time: 55 },
-      { age_group: "15-17", proficiency_level: "advanced", gender: "Mixed", category: "Kumite", cost: 4000, time: 90 },
-      
-      // Adult divisions  
-      { age_group: "18-34", proficiency_level: "beginner", gender: "Mixed", category: "Kata", cost: 4000, time: 60 },
-      { age_group: "18-34", proficiency_level: "intermediate", gender: "Mixed", category: "Kumite", cost: 4500, time: 95 },
-      { age_group: "18-34", proficiency_level: "advanced", gender: "Mixed", category: "Kata", cost: 5000, time: 65 },
-      { age_group: "35-50", proficiency_level: "intermediate", gender: "Mixed", category: "Kata", cost: 4000, time: 55 },
+      { age_group: "12-14", proficiency_level: "beginner", gender: "Male", category: "Kata", cost: 3000, time: 50 },
+      { age_group: "12-14", proficiency_level: "beginner", gender: "Female", category: "Kata", cost: 3000, time: 50 },
+      { age_group: "12-14", proficiency_level: "intermediate", gender: "Male", category: "Kumite", cost: 3500, time: 80 },
+      { age_group: "12-14", proficiency_level: "intermediate", gender: "Female", category: "Kumite", cost: 3500, time: 80 },
+      { age_group: "15-17", proficiency_level: "intermediate", gender: "Male", category: "Kata", cost: 3500, time: 55 },
+      { age_group: "15-17", proficiency_level: "intermediate", gender: "Female", category: "Kata", cost: 3500, time: 55 },
+      { age_group: "15-17", proficiency_level: "advanced", gender: "Male", category: "Kumite", cost: 4000, time: 90 },
+      { age_group: "15-17", proficiency_level: "advanced", gender: "Female", category: "Kumite", cost: 4000, time: 90 },
+
+      // Adult divisions
+      { age_group: "18-34", proficiency_level: "beginner", gender: "Male", category: "Kata", cost: 4000, time: 60 },
+      { age_group: "18-34", proficiency_level: "beginner", gender: "Female", category: "Kata", cost: 4000, time: 60 },
+      { age_group: "18-34", proficiency_level: "intermediate", gender: "Male", category: "Kumite", cost: 4500, time: 95 },
+      { age_group: "18-34", proficiency_level: "intermediate", gender: "Female", category: "Kumite", cost: 4500, time: 95 },
+      { age_group: "18-34", proficiency_level: "advanced", gender: "Male", category: "Kata", cost: 5000, time: 65 },
+      { age_group: "18-34", proficiency_level: "advanced", gender: "Female", category: "Kata", cost: 5000, time: 65 },
+      { age_group: "35-50", proficiency_level: "intermediate", gender: "Male", category: "Kata", cost: 4000, time: 55 },
+      { age_group: "35-50", proficiency_level: "intermediate", gender: "Female", category: "Kata", cost: 4000, time: 55 },
     ];
     
     const createdDivisions = [];
