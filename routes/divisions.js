@@ -661,60 +661,43 @@ router.get("/parentview", validateParent, async (req, res) => {
       return res.status(404).json({ error: "No divisions found for this tournament" });
     }
 
-    // Sort divisions by age range, then by proficiency level (beginner first)
+    // Two-phase sorting: 35+ divisions first (oldest to youngest), then under-35 divisions (youngest to oldest)
     allDivisions.sort((a, b) => {
       const [minA, maxA] = ageRange(a);
       const [minB, maxB] = ageRange(b);
-      
-      // First sort by age range
-      if (minA !== minB) return minA - minB;
-      if (maxA !== maxB) return maxA - maxB;
-      
+
+      const isA35Plus = maxA >= 35;
+      const isB35Plus = maxB >= 35;
+
+      // Phase 1: If one is 35+ and other isn't, 35+ goes first
+      if (isA35Plus && !isB35Plus) return -1;
+      if (!isA35Plus && isB35Plus) return 1;
+
+      // Phase 2: Both are 35+ - sort oldest to youngest
+      if (isA35Plus && isB35Plus) {
+        if (maxB !== maxA) return maxB - maxA; // Oldest first within 35+
+        if (minB !== minA) return minB - minA;
+      }
+
+      // Phase 3: Both are under 35 - sort youngest to oldest
+      if (!isA35Plus && !isB35Plus) {
+        if (minA !== minB) return minA - minB; // Youngest first within under-35
+        if (maxA !== maxB) return maxA - maxB;
+      }
+
       // If same age range, sort by proficiency level (beginner first)
       return getProficiencyOrder(a.proficiency_level) - getProficiencyOrder(b.proficiency_level);
     });
 
-    // Check if there are any active divisions under 35
-    const hasUnder35Divisions = allDivisions.some(division => {
-      if (!division.is_active) return false;
-      const range = ageRange(division);
-      return range[1] < 35; // max age is under 35
-    });
-
-    // Determine starting point based on whether under 35 divisions exist
-    let startingDivision;
-    if (hasUnder35Divisions) {
-      // Start from lowest age division (kids/teens first)
-      startingDivision = lowerAgeDivision(allDivisions);
-    } else {
-      // Start from highest age division (adults 35+ only)
-      startingDivision = higherAgeDivision(allDivisions);
-    }
-
-    if (!startingDivision.division_id) {
-      return res.status(404).json({ error: "No active divisions found" });
-    }
-
+    // Divisions are already sorted in the correct two-phase order
     const orderedDivisions = [];
-    const processedIds = new Set();
 
-    // Find the starting division index
-    const startIndex = allDivisions.findIndex(
-      div => div.division_id === startingDivision.division_id
-    );
+    // Process divisions in the pre-sorted order (35+ first, then under-35)
+    // Since array is already sorted correctly, just process it in order
+    for (let i = 0; i < allDivisions.length; i++) {
+      const currentDivision = allDivisions[i];
 
-    if (startIndex === -1) {
-      return res.status(500).json({ error: "Could not find starting division" });
-    }
-
-    // Process divisions in age order (always ascending)
-    let currentIndex = startIndex;
-    let hasWrapped = false;
-
-    while (orderedDivisions.length < allDivisions.length) {
-      const currentDivision = allDivisions[currentIndex];
-      
-      if (currentDivision && !processedIds.has(currentDivision.division_id)) {
+      if (currentDivision) {
         orderedDivisions.push({
           division_id: currentDivision.division_id,
           age_group: currentDivision.age_group,
@@ -724,29 +707,12 @@ router.get("/parentview", validateParent, async (req, res) => {
           time: currentDivision.time,
           is_active: currentDivision.is_active,
           is_complete: currentDivision.is_complete,
-          tournament_order: orderedDivisions.length + 1,
-          status: currentDivision.is_complete ? 'completed' : 
+          tournament_order: i + 1,
+          status: currentDivision.is_complete ? 'completed' :
                  currentDivision.is_active ? 'in_progress' : 'pending',
           mat_id: currentDivision.mat ? currentDivision.mat.mat_id : null,
           mat_name: currentDivision.mat ? currentDivision.mat.mat_name : null
         });
-        processedIds.add(currentDivision.division_id);
-      }
-
-      // Move to next division (always ascending through ages)
-      currentIndex++;
-
-      // Handle wrap-around when we reach the end
-      if (currentIndex >= allDivisions.length && !hasWrapped) {
-        // If we started with under 35, wrap to 35+ divisions
-        // If we started with 35+, wrap to under 35 divisions  
-        currentIndex = 0;
-        hasWrapped = true;
-      }
-
-      // Prevent infinite loop
-      if (hasWrapped && currentIndex >= startIndex) {
-        break;
       }
     }
 
@@ -809,15 +775,30 @@ router.post('/assign-mats', validateToken, async (req, res) => {
       return res.status(404).json({ error: "No divisions found for this tournament" });
     }
 
-    // Sort divisions by age range, then by proficiency level (same logic as tournament-order)
+    // Two-phase sorting: 35+ divisions first (oldest to youngest), then under-35 divisions (youngest to oldest)
     allDivisions.sort((a, b) => {
       const [minA, maxA] = ageRange(a);
       const [minB, maxB] = ageRange(b);
-      
-      // First sort by age range
-      if (minA !== minB) return minA - minB;
-      if (maxA !== maxB) return maxA - maxB;
-      
+
+      const isA35Plus = maxA >= 35;
+      const isB35Plus = maxB >= 35;
+
+      // Phase 1: If one is 35+ and other isn't, 35+ goes first
+      if (isA35Plus && !isB35Plus) return -1;
+      if (!isA35Plus && isB35Plus) return 1;
+
+      // Phase 2: Both are 35+ - sort oldest to youngest
+      if (isA35Plus && isB35Plus) {
+        if (maxB !== maxA) return maxB - maxA; // Oldest first within 35+
+        if (minB !== minA) return minB - minA;
+      }
+
+      // Phase 3: Both are under 35 - sort youngest to oldest
+      if (!isA35Plus && !isB35Plus) {
+        if (minA !== minB) return minA - minB; // Youngest first within under-35
+        if (maxA !== maxB) return maxA - maxB;
+      }
+
       // If same age range, sort by proficiency level (beginner first)
       return getProficiencyOrder(a.proficiency_level) - getProficiencyOrder(b.proficiency_level);
     });
@@ -841,11 +822,11 @@ router.post('/assign-mats', validateToken, async (req, res) => {
       { where: { tournament_id: tournament_id } }
     );
 
-    // Only assign the first division to each mat initially
+    // Only assign the first division to each mat initially (now sorted oldest-first)
     // Subsequent divisions will be assigned automatically when current divisions complete
     const assignments = [];
     const matsAssigned = new Set();
-    
+
     for (let i = 0; i < allDivisions.length && matsAssigned.size < mats.length; i++) {
       const division = allDivisions[i];
       const matIndex = i % mats.length;
@@ -855,7 +836,7 @@ router.post('/assign-mats', validateToken, async (req, res) => {
       if (!matsAssigned.has(assignedMat.mat_id)) {
         // Update the division with mat assignment and make it active
         await Divisions.update(
-          { 
+          {
             mat_id: assignedMat.mat_id,
             is_active: true // First division on each mat becomes active
           },
@@ -960,70 +941,56 @@ async function reassignMatToNextDivision(tournament_id, mat_id) {
       return null;
     }
 
-    // Use the SAME ordering logic as tournament-order route
+    // Use the SAME two-phase ordering logic as tournament-order route
     allDivisions.sort((a, b) => {
       const [minA, maxA] = ageRange(a);
       const [minB, maxB] = ageRange(b);
-      
-      // First sort by age range
-      if (minA !== minB) return minA - minB;
-      if (maxA !== maxB) return maxA - maxB;
-      
+
+      const isA35Plus = maxA >= 35;
+      const isB35Plus = maxB >= 35;
+
+      // Phase 1: If one is 35+ and other isn't, 35+ goes first
+      if (isA35Plus && !isB35Plus) return -1;
+      if (!isA35Plus && isB35Plus) return 1;
+
+      // Phase 2: Both are 35+ - sort oldest to youngest
+      if (isA35Plus && isB35Plus) {
+        if (maxB !== maxA) return maxB - maxA; // Oldest first within 35+
+        if (minB !== minA) return minB - minA;
+      }
+
+      // Phase 3: Both are under 35 - sort youngest to oldest
+      if (!isA35Plus && !isB35Plus) {
+        if (minA !== minB) return minA - minB; // Youngest first within under-35
+        if (maxA !== maxB) return maxA - maxB;
+      }
+
       // If same age range, sort by proficiency level (beginner first)
       return getProficiencyOrder(a.proficiency_level) - getProficiencyOrder(b.proficiency_level);
     });
 
-    // Determine starting point based on tournament logic (same as tournament-order)
-    const hasUnder35Divisions = allDivisions.some(division => {
-      if (!division.is_active && division.is_complete) return false;
-      const range = ageRange(division);
-      return range[1] < 35;
-    });
+    // Process divisions in the pre-sorted two-phase order to find next available
+    // Array is already sorted: 35+ first (oldest to youngest), then under-35 (youngest to oldest)
+    for (let i = 0; i < allDivisions.length; i++) {
+      const currentDivision = allDivisions[i];
 
-    let startingDivision;
-    if (hasUnder35Divisions) {
-      startingDivision = lowerAgeDivision(allDivisions);
-    } else {
-      startingDivision = higherAgeDivision(allDivisions);
-    }
-
-    if (!startingDivision.division_id) {
-      return null;
-    }
-
-    // Find the starting division index
-    const startIndex = allDivisions.findIndex(
-      div => div.division_id === startingDivision.division_id
-    );
-
-    if (startIndex === -1) {
-      return null;
-    }
-
-    // Process divisions in tournament order to find next available
-    let currentIndex = startIndex;
-    let hasWrapped = false;
-
-    while (currentIndex < allDivisions.length) {
-      const currentDivision = allDivisions[currentIndex];
-      
       // Check if this division is available (not active, not complete, no mat assigned)
-      if (currentDivision && 
-          !currentDivision.is_active && 
+      if (currentDivision &&
+          !currentDivision.is_active &&
           !currentDivision.is_complete &&
           !currentDivision.mat_id) {
-        
+
         // Assign this division to the mat and make it active
         await Divisions.update(
-          { 
-            mat_id: mat_id, 
-            is_active: true 
+          {
+            mat_id: mat_id,
+            is_active: true
           },
           { where: { division_id: currentDivision.division_id } }
         );
 
         console.log(`Mat ${mat_id} reassigned to division ${currentDivision.division_id} (${currentDivision.age_group} ${currentDivision.proficiency_level})`);
-        
+
         return {
           division_id: currentDivision.division_id,
           age_group: currentDivision.age_group,
@@ -1031,20 +998,6 @@ async function reassignMatToNextDivision(tournament_id, mat_id) {
           gender: currentDivision.gender,
           category: currentDivision.category
         };
-      }
-
-      // Move to next division (always ascending through ages)
-      currentIndex++;
-
-      // Handle wrap-around when we reach the end
-      if (currentIndex >= allDivisions.length && !hasWrapped) {
-        currentIndex = 0;
-        hasWrapped = true;
-      }
-
-      // Prevent infinite loop
-      if (hasWrapped && currentIndex >= startIndex) {
-        break;
       }
     }
 
@@ -1122,7 +1075,7 @@ function lowerAgeDivision(allDivisions) {
     minAge: Infinity, // Fixed: was 0, should be Infinity
     division_id: null
   };
-  
+
   for (const division of allDivisions) {
     if (division.is_active) {
       const range = ageRange(division);
@@ -1130,6 +1083,39 @@ function lowerAgeDivision(allDivisions) {
         count.minAge = range[0];
         count.division_id = division.division_id;
       }
+    }
+  }
+  return count;
+}
+
+// Helper functions for initial mat assignment (don't require active status)
+function getHighestAgeDivisionForAssignment(allDivisions) {
+  let count = {
+    maxAge: 0,
+    division_id: null
+  };
+
+  for (const division of allDivisions) {
+    const range = ageRange(division);
+    if (count.maxAge < range[1]) {
+      count.maxAge = range[1];
+      count.division_id = division.division_id;
+    }
+  }
+  return count;
+}
+
+function getLowestAgeDivisionForAssignment(allDivisions) {
+  let count = {
+    minAge: Infinity,
+    division_id: null
+  };
+
+  for (const division of allDivisions) {
+    const range = ageRange(division);
+    if (count.minAge > range[0]) {
+      count.minAge = range[0];
+      count.division_id = division.division_id;
     }
   }
   return count;

@@ -192,6 +192,11 @@ router.post("/", async (req, res) => {
       { age_group: "18-34", proficiency_level: "intermediate", gender: "Female", category: "Kumite", cost: 4500, time: 95 },
       { age_group: "18-34", proficiency_level: "advanced", gender: "Male", category: "Kata", cost: 5000, time: 65 },
       { age_group: "18-34", proficiency_level: "advanced", gender: "Female", category: "Kata", cost: 5000, time: 65 },
+
+      // Specific 36-38 age group divisions
+      { age_group: "36-38", proficiency_level: "intermediate", gender: "Male", category: "Kata", cost: 4200, time: 55 },
+      { age_group: "36-38", proficiency_level: "intermediate", gender: "Female", category: "Kata", cost: 4200, time: 55 },
+
       { age_group: "35-50", proficiency_level: "intermediate", gender: "Male", category: "Kata", cost: 4000, time: 55 },
       { age_group: "35-50", proficiency_level: "intermediate", gender: "Female", category: "Kata", cost: 4000, time: 55 },
     ];
@@ -252,7 +257,25 @@ router.post("/", async (req, res) => {
       { name: "Jennifer Adams", date_of_birth: "1995-01-15", belt_color: "black", email: "jennifer.adams@email.com" },
       { name: "Marcus Thompson", date_of_birth: "1988-11-22", belt_color: "brown", email: "marcus.thompson@email.com" },
       { name: "Amanda Lee", date_of_birth: "1982-04-10", belt_color: "purple", email: "amanda.lee@email.com" },
-      { name: "Robert Martinez", date_of_birth: "1975-09-30", belt_color: "green", email: "robert.martinez@email.com" }
+      { name: "Robert Martinez", date_of_birth: "1975-09-30", belt_color: "green", email: "robert.martinez@email.com" },
+
+      // Additional older adult participants for 35-50 age group
+      { name: "Patricia Johnson", date_of_birth: "1978-03-12", belt_color: "orange", email: "patricia.johnson@email.com" },
+      { name: "Michael Davis", date_of_birth: "1980-07-25", belt_color: "green", email: "michael.davis@email.com" },
+      { name: "Sandra Williams", date_of_birth: "1975-11-08", belt_color: "purple", email: "sandra.williams@email.com" },
+      { name: "David Brown", date_of_birth: "1979-09-14", belt_color: "orange", email: "david.brown@email.com" },
+      { name: "Linda Garcia", date_of_birth: "1977-05-22", belt_color: "green", email: "linda.garcia@email.com" },
+      { name: "James Miller", date_of_birth: "1981-12-03", belt_color: "purple", email: "james.miller@email.com" },
+      { name: "Maria Lopez", date_of_birth: "1976-08-17", belt_color: "orange", email: "maria.lopez@email.com" },
+      { name: "John Anderson", date_of_birth: "1983-04-29", belt_color: "green", email: "john.anderson@email.com" },
+
+      // Specific participants for 36-38 age group (born 1985-1988)
+      { name: "Sarah Mitchell", date_of_birth: "1987-02-14", belt_color: "orange", email: "sarah.mitchell@email.com" },
+      { name: "Brian Walsh", date_of_birth: "1986-08-09", belt_color: "green", email: "brian.walsh@email.com" },
+      { name: "Rachel Turner", date_of_birth: "1985-11-23", belt_color: "green", email: "rachel.turner@email.com" },
+      { name: "Kevin O'Brien", date_of_birth: "1988-01-17", belt_color: "orange", email: "kevin.obrien@email.com" },
+      { name: "Lisa Chang", date_of_birth: "1987-06-30", belt_color: "green", email: "lisa.chang@email.com" },
+      { name: "Mark Stevens", date_of_birth: "1986-12-05", belt_color: "orange", email: "mark.stevens@email.com" }
     ];
     
     // Assign parent IDs to children
@@ -273,16 +296,49 @@ router.post("/", async (req, res) => {
     
     console.log(`Created ${createdParticipants.length} participants`);
     
-    // 7. Register Participants to Compatible Divisions - Simplified approach
+    // 7. Register Participants to Compatible Divisions - with age and belt checking
+    // Helper function to check age compatibility
+    const getParticipantAge = (dateOfBirth) => {
+      const today = new Date();
+      const birthDate = new Date(dateOfBirth);
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      return age;
+    };
+
+    const isAgeCompatible = (participant, division) => {
+      const age = getParticipantAge(participant.date_of_birth);
+      const ageGroup = division.age_group;
+
+      if (ageGroup === "6-8") return age >= 6 && age <= 8;
+      if (ageGroup === "9-11") return age >= 9 && age <= 11;
+      if (ageGroup === "12-14") return age >= 12 && age <= 14;
+      if (ageGroup === "15-17") return age >= 15 && age <= 17;
+      if (ageGroup === "18-34") return age >= 18 && age <= 34;
+      if (ageGroup === "36-38") return age >= 36 && age <= 38;
+      if (ageGroup === "35-50") return age >= 35 && age <= 50;
+
+      return false;
+    };
+
     // Helper function to check belt/proficiency compatibility
     const canParticipantCompete = (participant, division) => {
       const beginnerBelts = ["white", "yellow"];
       const intermediateBelts = ["orange", "green"];
       const advancedBelts = ["purple", "brown", "black"];
-      
+
       const level = division.proficiency_level.toLowerCase();
       const userBelt = participant.belt_color.toLowerCase();
-      
+
+      // Check age compatibility first
+      if (!isAgeCompatible(participant, division)) {
+        return false;
+      }
+
+      // Then check belt compatibility
       if (level === "beginner") {
         return beginnerBelts.includes(userBelt);
       } else if (level === "intermediate") {
@@ -290,7 +346,7 @@ router.post("/", async (req, res) => {
       } else if (level === "advanced") {
         return advancedBelts.includes(userBelt) || intermediateBelts.includes(userBelt) || beginnerBelts.includes(userBelt);
       }
-      
+
       return false;
     };
 
