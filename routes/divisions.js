@@ -497,6 +497,98 @@ router.get("/parentview", validateParent, async (req, res) => {
 
 
 
+  // Update division custom order
+  router.patch("/order", validateToken, async (req, res) => {
+    try {
+      const { divisions } = req.body; // Array of {division_id, custom_order}
+      const user_account_id = req.user.account_id;
+
+      if (!divisions || !Array.isArray(divisions) || divisions.length === 0) {
+        return res.status(400).json({ error: "Divisions array is required" });
+      }
+
+      // Validate and update each division
+      const { sequelize } = require('../models');
+      const transaction = await sequelize.transaction();
+
+      try {
+        for (const divisionUpdate of divisions) {
+          const { division_id, custom_order } = divisionUpdate;
+
+          if (!division_id) {
+            throw new Error("Division ID is required for each division");
+          }
+
+          // Check if user owns the tournament (using division_id to get tournament_id)
+          const authCheck = await checkTournamentOwnership(user_account_id, null, division_id);
+          if (!authCheck.authorized) {
+            throw new Error("Unauthorized: You don't own this tournament");
+          }
+
+          // Update the division's custom_order
+          await Divisions.update(
+            { custom_order: custom_order },
+            {
+              where: { division_id: division_id },
+              transaction
+            }
+          );
+        }
+
+        await transaction.commit();
+        res.json({
+          message: "Division order updated successfully",
+          updated_count: divisions.length
+        });
+
+      } catch (transactionError) {
+        await transaction.rollback();
+        throw transactionError;
+      }
+
+    } catch (error) {
+      console.error("Error updating division order:", error);
+      res.status(500).json({
+        error: error.message || "Failed to update division order"
+      });
+    }
+  });
+
+  // Reset divisions to algorithmic ordering
+  router.patch("/reset-order", validateToken, async (req, res) => {
+    try {
+      const { tournament_id } = req.body;
+      const user_account_id = req.user.account_id;
+
+      if (!tournament_id) {
+        return res.status(400).json({ error: "Tournament ID is required" });
+      }
+
+      // Check if user owns the tournament
+      const authCheck = await checkTournamentOwnership(user_account_id, tournament_id);
+      if (!authCheck.authorized) {
+        return res.status(401).json({ error: authCheck.error });
+      }
+
+      // Reset all custom_order values to null for this tournament
+      await Divisions.update(
+        { custom_order: null },
+        { where: { tournament_id: tournament_id } }
+      );
+
+      res.json({
+        message: "Division order reset to algorithmic sorting",
+        tournament_id: tournament_id
+      });
+
+    } catch (error) {
+      console.error("Error resetting division order:", error);
+      res.status(500).json({
+        error: "Failed to reset division order"
+      });
+    }
+  });
+
   router.patch("/", validateToken, async (req, res) => {
     try {
       const data = req.body;
@@ -661,33 +753,26 @@ router.get("/parentview", validateParent, async (req, res) => {
       return res.status(404).json({ error: "No divisions found for this tournament" });
     }
 
-    // Two-phase sorting: 35+ divisions first (oldest to youngest), then under-35 divisions (youngest to oldest)
-    allDivisions.sort((a, b) => {
-      const [minA, maxA] = ageRange(a);
-      const [minB, maxB] = ageRange(b);
+    // Check if any divisions have custom ordering
+    const hasCustomOrder = allDivisions.some(division => division.custom_order !== null);
 
-      const isA35Plus = maxA >= 35;
-      const isB35Plus = maxB >= 35;
-
-      // Phase 1: If one is 35+ and other isn't, 35+ goes first
-      if (isA35Plus && !isB35Plus) return -1;
-      if (!isA35Plus && isB35Plus) return 1;
-
-      // Phase 2: Both are 35+ - sort oldest to youngest
-      if (isA35Plus && isB35Plus) {
-        if (maxB !== maxA) return maxB - maxA; // Oldest first within 35+
-        if (minB !== minA) return minB - minA;
-      }
-
-      // Phase 3: Both are under 35 - sort youngest to oldest
-      if (!isA35Plus && !isB35Plus) {
-        if (minA !== minB) return minA - minB; // Youngest first within under-35
-        if (maxA !== maxB) return maxA - maxB;
-      }
-
-      // If same age range, sort by proficiency level (beginner first)
-      return getProficiencyOrder(a.proficiency_level) - getProficiencyOrder(b.proficiency_level);
-    });
+    if (hasCustomOrder) {
+      // Use custom ordering - sort by custom_order field
+      allDivisions.sort((a, b) => {
+        // If both have custom_order, sort by that
+        if (a.custom_order !== null && b.custom_order !== null) {
+          return a.custom_order - b.custom_order;
+        }
+        // If only one has custom_order, it goes first
+        if (a.custom_order !== null) return -1;
+        if (b.custom_order !== null) return 1;
+        // If neither has custom_order, use algorithmic sorting as fallback
+        return algorithmicSort(a, b);
+      });
+    } else {
+      // Use algorithmic sorting (existing logic)
+      allDivisions.sort(algorithmicSort);
+    }
 
     // Divisions are already sorted in the correct two-phase order
     const orderedDivisions = [];
@@ -1412,6 +1497,34 @@ function canCompete(level, userBelt) {
     return advancedBelts.includes(userBelt) || intermediateBelts.includes(userBelt) || beginnerBelts.includes(userBelt);
   }
   return false;
+}
+
+// Algorithmic sorting function (extracted from original logic)
+function algorithmicSort(a, b) {
+  const [minA, maxA] = ageRange(a);
+  const [minB, maxB] = ageRange(b);
+
+  const isA35Plus = maxA >= 35;
+  const isB35Plus = maxB >= 35;
+
+  // Phase 1: If one is 35+ and other isn't, 35+ goes first
+  if (isA35Plus && !isB35Plus) return -1;
+  if (!isA35Plus && isB35Plus) return 1;
+
+  // Phase 2: Both are 35+ - sort oldest to youngest
+  if (isA35Plus && isB35Plus) {
+    if (maxB !== maxA) return maxB - maxA; // Oldest first within 35+
+    if (minB !== minA) return minB - minA;
+  }
+
+  // Phase 3: Both are under 35 - sort youngest to oldest
+  if (!isA35Plus && !isB35Plus) {
+    if (minA !== minB) return minA - minB; // Youngest first within under-35
+    if (maxA !== maxB) return maxA - maxB;
+  }
+
+  // If same age range, sort by proficiency level (beginner first)
+  return getProficiencyOrder(a.proficiency_level) - getProficiencyOrder(b.proficiency_level);
 }
 
 function isAge(age_group, date_of_birth) {

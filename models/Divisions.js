@@ -61,6 +61,11 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false,
       defaultValue: 0
     },
+    custom_order: {
+      type: DataTypes.INTEGER,
+      allowNull: true, // NULL means use algorithmic ordering
+      defaultValue: null
+    },
     created_at: {
       type: DataTypes.DATE,
       allowNull: false,
