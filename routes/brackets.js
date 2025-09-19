@@ -281,13 +281,16 @@ const { division_id } = req.query; // get division_id from query params
 
         // Determine which user to update based on 'user'
         if (user === 'user1') {
+            // Check for SENSHU before updating points
+            await updateSenshu(bracket_id, user, bracket.points_user1, bracket.points_user2);
+
             await brackets.update(
                 { points_user1: points },
                 { where: { bracket_id: bracket_id } }
             );
             if(!division.is_active){
                 await Divisions.update(
-                    { is_active: true },   
+                    { is_active: true },
                     { where: { division_id: bracket.division_id } }
                 );
                 // pseudo code first locate all the mats for this tournament by tournament_id and the amount of them
@@ -296,13 +299,16 @@ const { division_id } = req.query; // get division_id from query params
                 // thats open to the division. At the end once a division is done asign that mats is_active back to false.
             }
         } else if (user === 'user2') {
+            // Check for SENSHU before updating points
+            await updateSenshu(bracket_id, user, bracket.points_user1, bracket.points_user2);
+
             await brackets.update(
                 { points_user2: points },
                 { where: { bracket_id: bracket_id } }
             );
             if(!division.is_active){
                 await Divisions.update(
-                    { is_active: true },   
+                    { is_active: true },
                     { where: { division_id: bracket.division_id } }
                 );
             }
@@ -345,11 +351,181 @@ const { division_id } = req.query; // get division_id from query params
             );
         }
 
+        // Check for tie resolution with SENSHU
+        const tieResult = await checkTieWithSenshu(bracket_id, bracket.points_user1, bracket.points_user2, time);
+        if (tieResult.tieResolved) {
+            return res.status(200).send({
+                message: `Match ended - ${tieResult.winner} wins by ${tieResult.reason}`,
+                tieResolved: true,
+                winner: tieResult.winner,
+                reason: tieResult.reason
+            });
+        }
+
         res.status(200).send({ message: 'Points updated successfully' });
-        
+
     } catch (error) {
         console.error(error);
         res.status(500).send({ error: 'An error occurred while updating points' });
+    }
+});
+
+// Add penalty endpoint
+router.patch('/addPenalty', async (req, res) => {
+    const { bracket_id, user } = req.body;
+
+    try {
+        // Fetch the current bracket
+        let bracket = await brackets.findOne({ where: { bracket_id } });
+
+        if (!bracket) {
+            return res.status(404).send({ error: 'Bracket not found' });
+        }
+
+        let currentPenalties, newPenalties;
+
+        // Determine which user gets the penalty
+        if (user === 'user1') {
+            currentPenalties = bracket.penalties_user1;
+            newPenalties = currentPenalties + 1;
+
+            await brackets.update(
+                {
+                    penalties_user1: newPenalties,
+                    penalty_level_user1: getPenaltyLevel(newPenalties)
+                },
+                { where: { bracket_id } }
+            );
+        } else if (user === 'user2') {
+            currentPenalties = bracket.penalties_user2;
+            newPenalties = currentPenalties + 1;
+
+            await brackets.update(
+                {
+                    penalties_user2: newPenalties,
+                    penalty_level_user2: getPenaltyLevel(newPenalties)
+                },
+                { where: { bracket_id } }
+            );
+        } else {
+            return res.status(400).send({ error: 'Invalid user' });
+        }
+
+        // Check if this penalty results in automatic win (HANSOKU)
+        const autoWinResult = await checkAutoWinFromPenalty(bracket_id, user);
+        if (autoWinResult.autoWin) {
+            return res.status(200).send({
+                message: `${autoWinResult.winner} wins by ${autoWinResult.reason}`,
+                autoWin: true,
+                winner: autoWinResult.winner,
+                reason: autoWinResult.reason,
+                penaltyLevel: getPenaltyLevel(newPenalties)
+            });
+        }
+
+        res.status(200).send({
+            message: 'Penalty added successfully',
+            penaltyLevel: getPenaltyLevel(newPenalties),
+            totalPenalties: newPenalties
+        });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).send({ error: 'An error occurred while adding penalty' });
+    }
+});
+
+// Remove penalty endpoint
+router.patch('/removePenalty', async (req, res) => {
+    const { bracket_id, user } = req.body;
+
+    try {
+        let bracket = await brackets.findOne({ where: { bracket_id } });
+
+        if (!bracket) {
+            return res.status(404).send({ error: 'Bracket not found' });
+        }
+
+        let currentPenalties, newPenalties;
+
+        if (user === 'user1') {
+            currentPenalties = bracket.penalties_user1;
+            newPenalties = Math.max(0, currentPenalties - 1);
+
+            await brackets.update(
+                {
+                    penalties_user1: newPenalties,
+                    penalty_level_user1: getPenaltyLevel(newPenalties)
+                },
+                { where: { bracket_id } }
+            );
+        } else if (user === 'user2') {
+            currentPenalties = bracket.penalties_user2;
+            newPenalties = Math.max(0, currentPenalties - 1);
+
+            await brackets.update(
+                {
+                    penalties_user2: newPenalties,
+                    penalty_level_user2: getPenaltyLevel(newPenalties)
+                },
+                { where: { bracket_id } }
+            );
+        } else {
+            return res.status(400).send({ error: 'Invalid user' });
+        }
+
+        res.status(200).send({
+            message: 'Penalty removed successfully',
+            penaltyLevel: getPenaltyLevel(newPenalties),
+            totalPenalties: newPenalties
+        });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).send({ error: 'An error occurred while removing penalty' });
+    }
+});
+
+// Set Kata winner (no points, just declare winner)
+router.patch('/setKataWinner', async (req, res) => {
+    const { bracket_id, winner } = req.body;
+
+    try {
+        // Fetch the current bracket
+        let bracket = await brackets.findOne({ where: { bracket_id } });
+
+        if (!bracket) {
+            return res.status(404).send({ error: 'Bracket not found' });
+        }
+
+        // Set winner without points (Kata style)
+        const updateData = {
+            is_active: false,
+            is_complete: true
+        };
+
+        if (winner === 'user1') {
+            updateData.win_user1 = true;
+            updateData.win_user2 = false;
+        } else if (winner === 'user2') {
+            updateData.win_user1 = false;
+            updateData.win_user2 = true;
+        } else {
+            return res.status(400).send({ error: 'Invalid winner' });
+        }
+
+        await brackets.update(updateData, { where: { bracket_id } });
+        await updateDivisionTime(bracket.division_id);
+
+        res.status(200).send({
+            message: 'Kata winner set successfully',
+            winner: winner,
+            bracket_id: bracket_id
+        });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).send({ error: 'An error occurred while setting Kata winner' });
     }
 });
 
@@ -576,6 +752,107 @@ router.post('/initial', async (req, res) => {
     return res.status(500).json({ message: "Internal server error" });
   }
 });
+
+// Penalty progression helper functions
+const getPenaltyLevel = (penaltyCount) => {
+  switch (penaltyCount) {
+    case 0: return null;
+    case 1: return "CHUKOKU";
+    case 2: return "KEIKOKU";
+    case 3: return "HANSOKU-CHUI";
+    case 4: return "HANSOKU";
+    default: return "HANSOKU";
+  }
+};
+
+const checkAutoWinFromPenalty = async (bracket_id, user) => {
+  const bracket = await brackets.findOne({ where: { bracket_id } });
+
+  const penalties1 = bracket.penalties_user1;
+  const penalties2 = bracket.penalties_user2;
+
+  // If a user reaches 4 penalties (HANSOKU), opponent automatically wins
+  if (penalties1 >= 4) {
+    await brackets.update(
+      {
+        win_user1: false,
+        win_user2: true,
+        is_active: false,
+        is_complete: true,
+        penalty_level_user1: "HANSOKU"
+      },
+      { where: { bracket_id } }
+    );
+    await updateDivisionTime(bracket.division_id);
+    return { autoWin: true, winner: 'user2', reason: 'HANSOKU penalty' };
+  }
+
+  if (penalties2 >= 4) {
+    await brackets.update(
+      {
+        win_user1: true,
+        win_user2: false,
+        is_active: false,
+        is_complete: true,
+        penalty_level_user2: "HANSOKU"
+      },
+      { where: { bracket_id } }
+    );
+    await updateDivisionTime(bracket.division_id);
+    return { autoWin: true, winner: 'user1', reason: 'HANSOKU penalty' };
+  }
+
+  return { autoWin: false };
+};
+
+const updateSenshu = async (bracket_id, user, currentPoints1, currentPoints2) => {
+  // Only award SENSHU for the first point scored when both users have 0 points
+  if (currentPoints1 === 0 && currentPoints2 === 0) {
+    const updateData = {
+      first_scorer: user,
+      senshu_user1: user === 'user1',
+      senshu_user2: user === 'user2'
+    };
+
+    await brackets.update(updateData, { where: { bracket_id } });
+    return true;
+  }
+  return false;
+};
+
+const checkTieWithSenshu = async (bracket_id, points1, points2, timeLeft) => {
+  // Check for tie conditions and SENSHU advantage
+  if (timeLeft <= 0 && points1 === points2 && points1 > 0) {
+    const bracket = await brackets.findOne({ where: { bracket_id } });
+
+    if (bracket.senshu_user1) {
+      await brackets.update(
+        {
+          win_user1: true,
+          win_user2: false,
+          is_active: false,
+          is_complete: true
+        },
+        { where: { bracket_id } }
+      );
+      await updateDivisionTime(bracket.division_id);
+      return { tieResolved: true, winner: 'user1', reason: 'SENSHU advantage' };
+    } else if (bracket.senshu_user2) {
+      await brackets.update(
+        {
+          win_user1: false,
+          win_user2: true,
+          is_active: false,
+          is_complete: true
+        },
+        { where: { bracket_id } }
+      );
+      await updateDivisionTime(bracket.division_id);
+      return { tieResolved: true, winner: 'user2', reason: 'SENSHU advantage' };
+    }
+  }
+  return { tieResolved: false };
+};
 
 //  Update division time function
 

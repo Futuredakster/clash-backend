@@ -79,6 +79,41 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: false
+    },
+    penalties_user1: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0
+    },
+    penalties_user2: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0
+    },
+    penalty_level_user1: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      defaultValue: null
+    },
+    penalty_level_user2: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      defaultValue: null
+    },
+    senshu_user1: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
+    },
+    senshu_user2: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
+    },
+    first_scorer: {
+      type: DataTypes.STRING(10),
+      allowNull: true,
+      defaultValue: null
     }
   }, {
     sequelize,

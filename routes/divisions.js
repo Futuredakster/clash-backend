@@ -160,6 +160,30 @@ router.post('/bulk', validateToken, async (req, res) => {
   }
 });
 
+  // Get single division by ID
+  router.get("/single", async (req, res) => {
+    try {
+      const { division_id } = req.query;
+
+      if (!division_id) {
+        return res.status(400).json({ error: "Division ID is required" });
+      }
+
+      const division = await Divisions.findOne({
+        where: { division_id: division_id }
+      });
+
+      if (!division) {
+        return res.status(404).json({ error: "Division not found" });
+      }
+
+      res.json(division);
+    } catch (error) {
+      console.error("Error fetching division:", error);
+      res.status(500).json({ error: "Failed to fetch division" });
+    }
+  });
+
   router.get('/',validateToken,async (req,res) =>{
     const { tournament_id, search } = req.query;
     const user_account_id = req.user.account_id;
